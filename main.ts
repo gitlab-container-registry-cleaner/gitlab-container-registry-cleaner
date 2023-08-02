@@ -15,7 +15,7 @@ async function main(){
             "May yields lots of 404 on server side as not each ID will exists.")
         .option("-s, --start-index <number>", "Repository ID index to start with", "1")
         .option("-e, --end-index <number>", "Repository ID index to end with", "10000")
-        .option("-c, --concurrent <number>", "Number of promises running concurrently when requesting GitLab API", "20")
+        .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .action(action_list_repositories)
 
     program.command("clean")
@@ -28,7 +28,7 @@ async function main(){
         .argument("registry-id")
         .option("-r, --keep-regex <regex>", "Tags matching this regex will be deleted. Do not match anything by default.", ".*")
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
-        .option("-c, --concurrent <number>", "Number of promises running concurrently when requesting GitLab API", "20")
+        .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
         .action(action_clean_repository)
 
@@ -36,26 +36,27 @@ async function main(){
 
 }
 
-async function action_list_repositories(opts: {startIndex: string, endIndex: string, concurrent: string}) {
-    const repos = await new GitLabContainerRepositoryCleaner().getContainerRepositoriesConcurrently(
+async function action_list_repositories(opts: {startIndex: string, endIndex: string, concurrency: string}) {
+    const cleaner = new GitLabContainerRepositoryCleaner(true, Number.parseInt(opts.concurrency))
+
+    const repos = await cleaner.getContainerRepositoriesConcurrently(
         Number.parseInt(opts.startIndex),
-        Number.parseInt(opts.endIndex),
-        Number.parseInt(opts.concurrent)
+        Number.parseInt(opts.endIndex)
     )
 
     console.info(JSON.stringify(repos))
 }
 
 async function action_clean_repository(projectId: string, repositoryId: string, 
-        opts: { keepRegex: string, olderThanDays: string, concurrent: string, noDryRun: boolean}){
+        opts: { keepRegex: string, olderThanDays: string, concurrency: string, noDryRun: boolean}){
+
+    const cleaner = new GitLabContainerRepositoryCleaner(!opts.noDryRun, Number.parseInt(opts.concurrency))
     
-    await new GitLabContainerRepositoryCleaner().cleanupContainerRepositoryTags(
+    await cleaner.cleanupContainerRepositoryTags(
         Number.parseInt(projectId), 
         Number.parseInt(repositoryId),
         opts.keepRegex, 
         Number.parseInt(opts.olderThanDays),
-        !opts.noDryRun,
-        Number.parseInt(opts.concurrent),
         50
     )
     
