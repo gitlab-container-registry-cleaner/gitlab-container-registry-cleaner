@@ -1,6 +1,5 @@
 import { Command } from 'commander';
-import { openStdin } from 'process';
-import { get_container_repositories_parallel, delete_container_repository_tags } from './lib/gitlab';
+import { GitLabContainerRepositoryCleaner } from './lib/cleaner';
 
 async function main(){
     // get_all_container_registries()
@@ -38,7 +37,7 @@ async function main(){
 }
 
 async function action_list_repositories(opts: {startIndex: string, endIndex: string, concurrent: string}) {
-    const repos = await get_container_repositories_parallel(
+    const repos = await new GitLabContainerRepositoryCleaner().getContainerRepositoriesConcurrently(
         Number.parseInt(opts.startIndex),
         Number.parseInt(opts.endIndex),
         Number.parseInt(opts.concurrent)
@@ -50,7 +49,7 @@ async function action_list_repositories(opts: {startIndex: string, endIndex: str
 async function action_clean_repository(projectId: string, repositoryId: string, 
         opts: { keepRegex: string, olderThanDays: string, concurrent: string, noDryRun: boolean}){
     
-    await delete_container_repository_tags(
+    await new GitLabContainerRepositoryCleaner().cleanupContainerRepositoryTags(
         Number.parseInt(projectId), 
         Number.parseInt(repositoryId),
         opts.keepRegex, 
