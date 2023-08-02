@@ -4,12 +4,14 @@ specifiers:
   '@gitbeaker/cli': ^39.10.2
   '@gitbeaker/rest': ^39.10.2
   '@types/node': ^20.4.5
+  commander: ^11.0.0
   typescript: ^5.1.6
 
 dependencies:
   '@gitbeaker/cli': 39.10.2
   '@gitbeaker/rest': 39.10.2
   '@types/node': 20.4.5
+  commander: 11.0.0
 
 devDependencies:
   typescript: 5.1.6
@@ -88,6 +90,11 @@ packages:
 
   /color-name/1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+    dev: false
+
+  /commander/11.0.0:
+    resolution: {integrity: sha512-9HMlXtt/BNoYr8ooyjjNRdIilOTkVJXB+GhxMTtOKwk0R4j4lS4NpjuqmRxroBfnfTSHQIHQB7wryHhXarNjmQ==}
+    engines: {node: '>=16'}
     dev: false
 
   /function-bind/1.1.1:

@@ -40,6 +40,8 @@ export async function get_container_repositories_parallel(startIndex=1, endIndex
     }
 
     console.info(`Found ${repositories.length} repositories`)
+
+    return repositories
     
 }
 
@@ -57,7 +59,8 @@ export async function get_container_repositories(startIndex: number, endIndex: n
             const repo = await gl.ContainerRegistry.showRepository(i, {tagsCount: true})
             result.push(repo)
         } catch(e: any) {
-            if ( e?.cause?.response?.status != 404){
+            const status = e?.cause?.response?.status
+            if ( status != 404 && status != 403){
                 console.error(`Non-404 error listing repository ID ${i}`, e)
             }
         }
@@ -139,7 +142,7 @@ async function get_repository_tags_for_pages(projectId: number, repositoryId: nu
 
 export async function delete_container_repository_tags(projectId: number, 
         repositoryId: number, 
-        matchRegex = '^(latest|master|dev|dev_tested|v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*)$', 
+        keepTagRegex = '^(latest|master|dev|dev_tested|v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*)$', 
         olderThanDays = 7,
         dryRun=true,
         parallelism = 10,
@@ -150,7 +153,7 @@ export async function delete_container_repository_tags(projectId: number,
     const allTags = await get_all_repository_tags(projectId, repositoryId, parallelism, tagPerPage)
 
     // check all tags for regex
-    const tagRegex = new RegExp(matchRegex)
+    const tagRegex = new RegExp(keepTagRegex)
     let matchRegexTags : CondensedRegistryRepositoryTagSchema[] = []
 
     for (const tag of allTags){
@@ -158,6 +161,8 @@ export async function delete_container_repository_tags(projectId: number,
             matchRegexTags.push(tag)
         }
     }
+
+    console.info(`Found ${matchRegexTags.length} tags matching regex '${keepTagRegex}'`)
 
     // check date for all tags matching regex
     const tagPerPromise = Math.round(matchRegexTags.length / parallelism)
@@ -210,10 +215,19 @@ export async function delete_container_repository_tags(projectId: number,
 async function get_tag_details(projectId: number, repositoryId: number, tags: CondensedRegistryRepositoryTagSchema[]){
     const gl = gitlab_client()
 
+    console.info(`Getting details for ${tags.length} tags`)
+
     let result : RegistryRepositoryTagSchema[] = []
     for(const t of tags){
-        const tagDetails = await gl.ContainerRegistry.showTag(projectId, repositoryId, t.name)
-        result.push(tagDetails)
+        try {
+            const tagDetails = await gl.ContainerRegistry.showTag(projectId, repositoryId, t.name)
+            result.push(tagDetails)
+        } catch(e: any){
+            const status = e?.cause?.response?.status
+            if ( status != 404){
+                console.error(`Non-404 error getting tag ${t.name}`, e)
+            }
+        }   
     }
 
     return result
