@@ -25,7 +25,9 @@ export GITLAB_HOST=https://gitlab.awesomecompany.net
 export GITLAB_TOKEN="xxx" 
 ```
 
-### List Container Repositories instance-wide
+### List Container Repositories for entire instance, groups or projects
+
+List instance-wide Container Repositories:
 
 ```sh
 # Check all Container Repository from 1 to 10000 with a concurrency of 20 by default
@@ -35,8 +37,13 @@ export GITLAB_TOKEN="xxx"
 # Example to check between ID 500-1000 with 10 concurrency (up to 10 requests in parallel)
 # Output result to /tmp/repositories.json
 ./gitlab-container-registry-cleaner list all -s 500 -e 1000 -c 10 -o /tmp/repositories.json
+```
 
-# List project or group repositories
+Listing instance wide Container Repositories is done concurrently and may take some time. Internally, it calls GitLab REST API to check every repository ID between 1 and 10000 by default. 
+
+You can also list per group or per project:
+
+```sh
 ./gitlab-container-registry-cleaner list project 42
 ./gitlab-container-registry-cleaner list project mygroup/myproject
 
@@ -74,13 +81,7 @@ Repository ID is visible in the URL when navigating to your project Container Re
 https://gitlab.mycompany.net/somegroup/myproject/container_registry/42
 ```
 
-Alternatively, list all available Container Repository to find repositories for your project: 
-
-```
-./gitlab-container-registry-cleaner list
-```
-
-_Note: will add a command to list Container Repository for a project_
+Alternatively, use `./gitlab-container-registry-cleaner list` (see above)
 
 ### Example keep/delete regex
 
