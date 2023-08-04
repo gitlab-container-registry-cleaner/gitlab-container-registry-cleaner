@@ -53,10 +53,18 @@ class GitLabContainerRepositoryCleaner {
      * @param endIndex repository ID to end by
      * @param concurrent number of promises awaited concurrently
      */
-    async getContainerRepositoriesConcurrently(startIndex = 1, endIndex = 1000) {
+    async getContainerRepositoriesConcurrently(startIndex = 1, endIndex = 1000, output = "") {
+        if (!output) {
+            console.info("You didn't specify an output path to write results. By default results will be shown on stdout.");
+            console.info("Output may be long, it's possible your console buffer won't show everything.");
+            console.info("This command may run for a long time and some result may be lost.");
+            console.info("Use -o flag to specify a file such as -o /tmp/repositories.json");
+            console.info("");
+            await this.promptUser("Press CTRL+C to interrupt or ENTER to continue...");
+        }
         const totalLength = endIndex - startIndex + 1;
         const repositoryIds = [...Array(totalLength).keys()].map(i => i + startIndex);
-        console.info(`Requesting container repository IDs [${startIndex}-${endIndex}] concurrency ${this.concurrency}`);
+        console.info(`🔭 Requesting container repository IDs [${startIndex}-${endIndex}] concurrency ${this.concurrency}`);
         let repositoriesPromises = [];
         for (let i = 0; i <= this.concurrency - 1; i++) {
             const repositoriesProm = this.getContainerRepositories(repositoryIds, totalLength);
@@ -67,8 +75,17 @@ class GitLabContainerRepositoryCleaner {
             const partialRepositories = await repositoryProm;
             repositories = repositories.concat(partialRepositories);
         }
-        console.info(`Found ${repositories.length} repositories`);
-        return repositories;
+        console.info(`   Found ${repositories.length} repositories`);
+        if (output) {
+            console.info(`📝 Writing repository list as JSON to ${output}`);
+            this.writeDataJsonToFile(output, repositories);
+        }
+        else {
+            console.info(``);
+            console.info(repositories);
+            console.info(``);
+            console.info(`Repositories have been outputted to stdout. Use -o to write results as JSON to file.`);
+        }
     }
     /**
      * Used by getContainerRepositoriesConcurrently Promises to fetch repositories from array
@@ -80,7 +97,7 @@ class GitLabContainerRepositoryCleaner {
             const repoId = repositoryIds.pop();
             if (repoId !== undefined) {
                 if (repositoryIds.length % 100 == 0) {
-                    console.info(`Checking container repository IDs ${totalLength - repositoryIds.length}/${totalLength}...`);
+                    console.info(`  Checking container repository IDs ${totalLength - repositoryIds.length}/${totalLength}...`);
                 }
                 try {
                     const repo = await this.gl.ContainerRegistry.showRepository(repoId, { tagsCount: true });
@@ -152,9 +169,7 @@ class GitLabContainerRepositoryCleaner {
             console.warn(`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`);
             console.warn(`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`);
             console.warn(``);
-            const rl = readline.createInterface({ input: node_process_1.stdin, output: node_process_1.stdout });
-            const answer = await rl.question('Press any key to continue...');
-            rl.close();
+            await this.promptUser("Press ENTER to continue...");
         }
         const now = new Date();
         // retrieve all tags
@@ -169,7 +184,7 @@ class GitLabContainerRepositoryCleaner {
         console.info(`💀 Found ${deleteTagCount} tags to delete`);
         if (outputTagsToFile) {
             console.info(`📝 Writing tag list to ${outputTagsToFile}`);
-            await this.writeTagsToFile(outputTagsToFile, deleteTags);
+            await this.writeDataJsonToFile(outputTagsToFile, deleteTags);
         }
         // Delete tags in parallel
         if (this.dryRun) {
@@ -276,8 +291,13 @@ class GitLabContainerRepositoryCleaner {
             }
         }
     }
-    async writeTagsToFile(outputTagsToFile, tags) {
-        fs.writeFileSync(outputTagsToFile, JSON.stringify(tags, undefined, "  "));
+    async writeDataJsonToFile(outputTagsToFile, data) {
+        fs.writeFileSync(outputTagsToFile, JSON.stringify(data, undefined, "  "));
+    }
+    async promptUser(msg) {
+        const rl = readline.createInterface({ input: node_process_1.stdin, output: node_process_1.stdout });
+        const answer = await rl.question(msg);
+        rl.close();
     }
 }
 exports.GitLabContainerRepositoryCleaner = GitLabContainerRepositoryCleaner;

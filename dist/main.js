@@ -13,6 +13,7 @@ async function main() {
         .option("-s, --start-index <number>", "Repository ID index to start with", "1")
         .option("-e, --end-index <number>", "Repository ID index to end with", "10000")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
+        .option("-o, --output <file>", "Output repositorie list as JSON to file. By default will print to stdout.")
         .action(actionListRepositories);
     program.command("clean")
         .summary("Clean tags from a container repository.")
@@ -26,18 +27,16 @@ async function main() {
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
-        .option("--output-tags <file>", "Output tags to be deleted to specified file as JSON list. Useful with dry-run to check nothing important will be deleted.")
+        .option("-o, --output-tags <file>", "Output tag list to be deleted as JSON to specified file. Useful with dry-run to check nothing important will be deleted.")
         .action(actionCleanRepository);
     await program.parseAsync();
 }
 async function actionListRepositories(opts) {
     checkEnvironment();
     const cleaner = new cleaner_1.GitLabContainerRepositoryCleaner(true, Number.parseInt(opts.concurrency));
-    const repos = await cleaner.getContainerRepositoriesConcurrently(Number.parseInt(opts.startIndex), Number.parseInt(opts.endIndex));
-    console.info(JSON.stringify(repos));
+    const repos = await cleaner.getContainerRepositoriesConcurrently(Number.parseInt(opts.startIndex), Number.parseInt(opts.endIndex), opts.output);
 }
 async function actionCleanRepository(opts) {
-    console.info(opts);
     checkEnvironment();
     const cleaner = new cleaner_1.GitLabContainerRepositoryCleaner(opts.dryRun, Number.parseInt(opts.concurrency));
     await cleaner.cleanupContainerRepositoryTags(Number.parseInt(opts.projectId), Number.parseInt(opts.repositoryId), opts.keepRegex, opts.deleteRegex, Number.parseInt(opts.olderThanDays), 50, opts.outputTags);

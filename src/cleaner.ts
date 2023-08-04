@@ -35,12 +35,22 @@ export class GitLabContainerRepositoryCleaner {
      * @param endIndex repository ID to end by
      * @param concurrent number of promises awaited concurrently
      */
-    public async getContainerRepositoriesConcurrently(startIndex=1, endIndex=1000){
+    public async getContainerRepositoriesConcurrently(startIndex=1, endIndex=1000, output=""){
+
+        if (!output){
+            console.info("You didn't specify an output path to write results. By default results will be shown on stdout.")
+            console.info("Output may be long, it's possible your console buffer won't show everything.")  
+            console.info("This command may run for a long time and some result may be lost.")  
+            console.info("Use -o flag to specify a file such as -o /tmp/repositories.json")
+            console.info("")
+            
+            await this.promptUser("Press CTRL+C to interrupt or ENTER to continue...")
+        }
 
         const totalLength = endIndex - startIndex + 1
         const repositoryIds = [ ...Array(totalLength).keys() ].map( i => i+startIndex);
 
-        console.info(`Requesting container repository IDs [${startIndex}-${endIndex}] concurrency ${this.concurrency}`)
+        console.info(`🔭 Requesting container repository IDs [${startIndex}-${endIndex}] concurrency ${this.concurrency}`)
 
         let repositoriesPromises : Promise<RegistryRepositorySchema[]>[] = []
         for (let i = 0; i <= this.concurrency-1; i++){
@@ -54,8 +64,17 @@ export class GitLabContainerRepositoryCleaner {
             repositories = repositories.concat(partialRepositories)
         }
 
-        console.info(`Found ${repositories.length} repositories`)
-        return repositories
+        console.info(`   Found ${repositories.length} repositories`)
+        
+        if(output){
+            console.info(`📝 Writing repository list as JSON to ${output}`)
+            this.writeDataJsonToFile(output, repositories)
+        } else {
+            console.info(``)
+            console.info(repositories)
+            console.info(``)
+            console.info(`Repositories have been outputted to stdout. Use -o to write results as JSON to file.`)
+        }
     }
 
 
@@ -74,7 +93,7 @@ export class GitLabContainerRepositoryCleaner {
             if (repoId !== undefined){
 
                 if (repositoryIds.length % 100 == 0){
-                    console.info(`Checking container repository IDs ${totalLength-repositoryIds.length}/${totalLength}...`)
+                    console.info(`  Checking container repository IDs ${totalLength-repositoryIds.length}/${totalLength}...`)
                 }
 
                 try {
@@ -176,9 +195,7 @@ export class GitLabContainerRepositoryCleaner {
             console.warn(`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`)
             console.warn(``)
             
-            const rl = readline.createInterface({ input, output });
-            const answer = await rl.question('Press any key to continue...');
-            rl.close();
+            await this.promptUser("Press ENTER to continue...")
         }
 
         const now = new Date()
@@ -202,7 +219,7 @@ export class GitLabContainerRepositoryCleaner {
 
         if (outputTagsToFile){
             console.info(`📝 Writing tag list to ${outputTagsToFile}`)
-            await this.writeTagsToFile(outputTagsToFile, deleteTags)
+            await this.writeDataJsonToFile(outputTagsToFile, deleteTags)
         }
 
         // Delete tags in parallel
@@ -344,8 +361,14 @@ export class GitLabContainerRepositoryCleaner {
         }
     }
 
-    private async writeTagsToFile(outputTagsToFile: string, tags: RegistryRepositoryTagSchema[]){
-        fs.writeFileSync(outputTagsToFile, JSON.stringify(tags, undefined, "  "))
+    private async writeDataJsonToFile(outputTagsToFile: string, data: any){
+        fs.writeFileSync(outputTagsToFile, JSON.stringify(data, undefined, "  "))
+    }
+
+    private async promptUser(msg: string){
+        const rl = readline.createInterface({ input, output });
+        const answer = await rl.question(msg);
+        rl.close();
     }
 
 }

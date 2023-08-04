@@ -14,6 +14,7 @@ async function main(){
         .option("-s, --start-index <number>", "Repository ID index to start with", "1")
         .option("-e, --end-index <number>", "Repository ID index to end with", "10000")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
+        .option("-o, --output <file>", "Output repositorie list as JSON to file. By default will print to stdout.")
         .action(actionListRepositories)
 
     program.command("clean")
@@ -29,14 +30,14 @@ async function main(){
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
-        .option("--output-tags <file>", "Output tags to be deleted to specified file as JSON list. Useful with dry-run to check nothing important will be deleted.")
+        .option("-o, --output-tags <file>", "Output tag list to be deleted as JSON to specified file. Useful with dry-run to check nothing important will be deleted.")
         .action(actionCleanRepository)
 
     await program.parseAsync()
 
 }
 
-async function actionListRepositories(opts: {startIndex: string, endIndex: string, concurrency: string}) {
+async function actionListRepositories(opts: {startIndex: string, endIndex: string, concurrency: string, output: string}) {
 
     checkEnvironment()
 
@@ -44,10 +45,9 @@ async function actionListRepositories(opts: {startIndex: string, endIndex: strin
 
     const repos = await cleaner.getContainerRepositoriesConcurrently(
         Number.parseInt(opts.startIndex),
-        Number.parseInt(opts.endIndex)
+        Number.parseInt(opts.endIndex),
+        opts.output
     )
-
-    console.info(JSON.stringify(repos))
 }
 
 async function actionCleanRepository( opts: { 
@@ -60,8 +60,6 @@ async function actionCleanRepository( opts: {
         dryRun: boolean,
         outputTags?: string
     }){
-
-    console.info(opts)
 
     checkEnvironment()
 

@@ -24,7 +24,8 @@ export GITLAB_TOKEN="xxx"
 
 # Customize concurrency and ID range
 # Example to check between ID 500-1000 with 10 concurrency (up to 10 requests in parallel)
-./gitlab-container-registry-cleaner list -s 500 -e 1000 -c 10
+# Output result to /tmp/repositories.json
+./gitlab-container-registry-cleaner list -s 500 -e 1000 -c 10 -o /tmp/repositories.json
 ```
 
 ### Cleanup Container Repositories
