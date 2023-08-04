@@ -1,7 +1,35 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GitLabContainerRepositoryCleaner = void 0;
+exports.GitLabContainerRepositoryCleaner = exports.DEFAULT_DELETE_REGEX = exports.DEFAULT_KEEP_REGEX = void 0;
 const rest_1 = require("@gitbeaker/rest");
+const readline = __importStar(require("node:readline/promises"));
+const node_process_1 = require("node:process");
+const fs = __importStar(require("fs"));
+exports.DEFAULT_KEEP_REGEX = ".*";
+exports.DEFAULT_DELETE_REGEX = "^$";
 class GitLabContainerRepositoryCleaner {
     gl;
     // Max number of promises running in parallel
@@ -52,7 +80,7 @@ class GitLabContainerRepositoryCleaner {
             const repoId = repositoryIds.pop();
             if (repoId !== undefined) {
                 if (repositoryIds.length % 100 == 0) {
-                    console.info(`Checking container repository IDs ${totalLength - repositoryIds.length}/${totalLength}`);
+                    console.info(`Checking container repository IDs ${totalLength - repositoryIds.length}/${totalLength}...`);
                 }
                 try {
                     const repo = await this.gl.ContainerRegistry.showRepository(repoId, { tagsCount: true });
@@ -82,7 +110,7 @@ class GitLabContainerRepositoryCleaner {
         const tagCount = repo.tags_count;
         const pageTotal = Math.ceil(tagCount / tagPerPage);
         const pages = [...Array(pageTotal).keys()].map(i => i + 1);
-        console.info(`Listing ${tagCount} tags (${pageTotal} pages, ${tagPerPage} / page)`);
+        console.info(`🔭 Listing ${tagCount} tags (${pageTotal} pages, ${tagPerPage} / page)`);
         // Run all promises in parallel and fetch result later
         let tagListPromises = [];
         for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++) {
@@ -94,7 +122,7 @@ class GitLabContainerRepositoryCleaner {
             const tags = await tagListProm;
             allTags = allTags.concat(tags);
         }
-        console.info(`Found ${allTags.length} tags`);
+        console.info(`   Found ${allTags.length} tags`);
         return allTags;
     }
     /**
@@ -107,7 +135,7 @@ class GitLabContainerRepositoryCleaner {
             const page = pages.pop();
             if (page !== undefined) {
                 if (pages.length % 10 == 0) {
-                    console.info(`Listing Container Repository tags page ${totalPages - pages.length}/${totalPages}`);
+                    console.info(`   Listing Container Repository tags page ${totalPages - pages.length}/${totalPages}...`);
                 }
                 const tags = await this.gl.ContainerRegistry.allTags(projectId, repositoryId, { page: page, perPage: perPage });
                 result = result.concat(tags);
@@ -115,29 +143,61 @@ class GitLabContainerRepositoryCleaner {
         }
         return result;
     }
-    async cleanupContainerRepositoryTags(projectId, repositoryId, keepTagRegex = '.*', olderThanDays = 7, tagPerPage = 50) {
+    async cleanupContainerRepositoryTags(projectId, repositoryId, keepTagRegex = exports.DEFAULT_KEEP_REGEX, deleteTagRegex = exports.DEFAULT_DELETE_REGEX, olderThanDays = 90, tagPerPage = 50, outputTagsToFile = "") {
+        console.info(`🧹 Cleaning image tags for project ${projectId} repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`);
+        // warn user if parameters doesn't make sense or forgot to disable safety
+        if (keepTagRegex == exports.DEFAULT_KEEP_REGEX || deleteTagRegex == exports.DEFAULT_DELETE_REGEX) {
+            console.warn(``);
+            console.warn(`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't mach anything for safety reasons.`);
+            console.warn(`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`);
+            console.warn(`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`);
+            console.warn(``);
+            const rl = readline.createInterface({ input: node_process_1.stdin, output: node_process_1.stdout });
+            const answer = await rl.question('Press any key to continue...');
+            rl.close();
+        }
         const now = new Date();
         // retrieve all tags
         const allTags = await this.getRepositoryTagsConcurrently(projectId, repositoryId, tagPerPage);
         // filter out tags matching keep regex
-        const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex);
-        console.info(`Found ${regexFilteredTags.length} tags matching regex '${keepTagRegex}'`);
-        // filter out tags younger than days
+        console.log("🕸️  Filtering tag names with regex...");
+        const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex, deleteTagRegex);
+        console.info(`   Found ${regexFilteredTags.length} tags matching '${deleteTagRegex}' but not matching '${keepTagRegex}'`);
+        console.info(`👴 Checking tag creation date to filter out tags younger than ${olderThanDays} days`);
         const deleteTags = await this.filterTagsCreationDate(projectId, repositoryId, regexFilteredTags, olderThanDays);
         const deleteTagCount = deleteTags.length;
-        console.info(`Found ${deleteTagCount} tags to delet (matching regex and creation date).`);
+        console.info(`💀 Found ${deleteTagCount} tags to delete`);
+        if (outputTagsToFile) {
+            console.info(`📝 Writing tag list to ${outputTagsToFile}`);
+            await this.writeTagsToFile(outputTagsToFile, deleteTags);
+        }
         // Delete tags in parallel
-        console.info(`Deleting ${deleteTagCount} (dry-run: ${this.dryRun})...`);
+        if (this.dryRun) {
+            console.info(`🔥 [DRY-RUN] Would delete ${deleteTagCount} tags`);
+        }
+        else {
+            console.info(`🔥 Deleting ${deleteTagCount} tags...`);
+        }
         this.deleteTagsConcurrently(projectId, repositoryId, deleteTags);
-        console.info(`Deleted ${deleteTagCount} tags`);
+        if (this.dryRun) {
+            console.info(`✅ [DRY-RUN] Would have deleted ${deleteTagCount} tags`);
+        }
+        else {
+            console.info(`✅ Deleted ${deleteTagCount} tags !`);
+        }
     }
     /**
      * Filter tags based on regex. All tags matching regex are kept.
      * Return tags to remove.
      */
-    filterTagsRegex(tags, keepTagRegex) {
-        const tagRegex = new RegExp(keepTagRegex);
-        return tags.filter(t => !tagRegex.test(t.name));
+    filterTagsRegex(tags, keepTagRegexStr, deleteTagRegexStr) {
+        const keepTagRegex = new RegExp(keepTagRegexStr);
+        const deleteTagRegex = new RegExp(deleteTagRegexStr);
+        let deleteCandidate = [];
+        // filter out tags matching keepTagRegex
+        deleteCandidate = tags.filter(t => !keepTagRegex.test(t.name));
+        // filter in tags matching removeTagRegex
+        return deleteCandidate.filter(t => deleteTagRegex.test(t.name));
     }
     async getTagDetailsConcurrently(projectId, repositoryId, tags) {
         const detailedTagsPromises = [];
@@ -162,7 +222,7 @@ class GitLabContainerRepositoryCleaner {
             const t = tags.pop();
             if (t !== undefined) {
                 if (tags.length % 100 == 0) {
-                    console.info(`Fetch tag details ${totalTags - tags.length}/${totalTags}`);
+                    console.info(`   Fetching tag details ${totalTags - tags.length}/${totalTags}...`);
                 }
                 try {
                     const tagDetails = await this.gl.ContainerRegistry.showTag(projectId, repositoryId, t.name);
@@ -208,13 +268,16 @@ class GitLabContainerRepositoryCleaner {
             const tag = tags.pop();
             if (tag !== undefined) {
                 if (tags.length % 100 == 0) {
-                    console.info(`Deleting tag ${tagTotal - tags.length}/${tagTotal}...`);
+                    console.info(`    Deleting tag ${tagTotal - tags.length}/${tagTotal}...`);
                 }
                 if (!this.dryRun) {
-                    // await this.gl.ContainerRegistry.removeTag(projectId, repositoryId, t.name)
+                    await this.gl.ContainerRegistry.removeTag(projectId, repositoryId, tag.name);
                 }
             }
         }
+    }
+    async writeTagsToFile(outputTagsToFile, tags) {
+        fs.writeFileSync(outputTagsToFile, JSON.stringify(tags, undefined, "  "));
     }
 }
 exports.GitLabContainerRepositoryCleaner = GitLabContainerRepositoryCleaner;

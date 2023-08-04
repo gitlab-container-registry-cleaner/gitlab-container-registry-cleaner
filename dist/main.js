@@ -13,29 +13,46 @@ async function main() {
         .option("-s, --start-index <number>", "Repository ID index to start with", "1")
         .option("-e, --end-index <number>", "Repository ID index to end with", "10000")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
-        .action(action_list_repositories);
+        .action(actionListRepositories);
     program.command("clean")
         .summary("Clean tags from a container repository.")
         .description("Clean tags from a container repository concurrently using given regex and age filter. " +
         "Only tags matching BOTH regex and age will be deleted. " +
         "THIS IS A DESTRUCTIVE ACTION. Use with care.")
-        .argument("project-id")
-        .argument("registry-id")
-        .option("-r, --keep-regex <regex>", "Tags matching this regex will be deleted. Do not match anything by default.", ".*")
+        .requiredOption("-p, --project-id <id>", "Project ID containing repository to cleanup.")
+        .requiredOption("-r, --repository-id <id>", "Container Repository ID to cleanup.")
+        .option("-k, --keep-regex <regex>", "Tags matching this regex will be kept. Match everything by default for satefy.", ".*")
+        .option("-d, --delete-regex <regex>", "Tags matching this regex will be deleted. Do not match anything by default for safety .", "^$")
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
-        .action(action_clean_repository);
+        .option("--output-tags <file>", "Output tags to be deleted to specified file as JSON list. Useful with dry-run to check nothing important will be deleted.")
+        .action(actionCleanRepository);
     await program.parseAsync();
 }
-async function action_list_repositories(opts) {
+async function actionListRepositories(opts) {
+    checkEnvironment();
     const cleaner = new cleaner_1.GitLabContainerRepositoryCleaner(true, Number.parseInt(opts.concurrency));
     const repos = await cleaner.getContainerRepositoriesConcurrently(Number.parseInt(opts.startIndex), Number.parseInt(opts.endIndex));
     console.info(JSON.stringify(repos));
 }
-async function action_clean_repository(projectId, repositoryId, opts) {
-    const cleaner = new cleaner_1.GitLabContainerRepositoryCleaner(!opts.noDryRun, Number.parseInt(opts.concurrency));
-    await cleaner.cleanupContainerRepositoryTags(Number.parseInt(projectId), Number.parseInt(repositoryId), opts.keepRegex, Number.parseInt(opts.olderThanDays), 50);
+async function actionCleanRepository(opts) {
+    console.info(opts);
+    checkEnvironment();
+    const cleaner = new cleaner_1.GitLabContainerRepositoryCleaner(opts.dryRun, Number.parseInt(opts.concurrency));
+    await cleaner.cleanupContainerRepositoryTags(Number.parseInt(opts.projectId), Number.parseInt(opts.repositoryId), opts.keepRegex, opts.deleteRegex, Number.parseInt(opts.olderThanDays), 50, opts.outputTags);
+}
+function checkEnvironment() {
+    if (!process.env.GITLAB_HOST) {
+        console.error("GITLAB_HOST environment variable is not set. You must specify a GitLab instance to use.");
+        console.error('Example: `export GITLAB_HOST="https://gitlab.com"` or `export GITLAB_HOST="https://gitlab.mycompany.org`');
+        process.exit(1);
+    }
+    if (!process.env.GITLAB_TOKEN) {
+        console.error("GITLAB_TOKEN environment variable is not set. You need to provide a token with api scope to access GitLab REST API.");
+        console.error("See https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html");
+        process.exit(2);
+    }
 }
 main().catch(e => {
     console.error(e);
