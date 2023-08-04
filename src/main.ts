@@ -4,19 +4,34 @@ import { GitLabContainerRepositoryCleaner } from './cleaner';
 async function main(){
     const program = new Command();
 
-    program
+    // list
+    const listCmd = program
         .command("list")
-        .summary("List all container repositories.")
+        .summary("List Container Repositories.")
+
+    // list all
+    listCmd.command("all")
         .description(
-            "List all container repositories using GitLab REST API /registry/repositories/:id " +
+            "List all instance-wide Container Repositories using GitLab REST API /registry/repositories/:id " +
             "to list repository per ID in parallel from given start and end index. " +
             "May yields lots of 404 on server side as not each ID will exists.")
         .option("-s, --start-index <number>", "Repository ID index to start with", "1")
         .option("-e, --end-index <number>", "Repository ID index to end with", "10000")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("-o, --output <file>", "Output repositorie list as JSON to file. By default will print to stdout.")
-        .action(actionListRepositories)
+        .action(actionListAllRepositories)
 
+    listCmd.command("project")
+        .description("List a project's Container Repositories.")
+        .action(actionListProjectRepositories)
+        .argument("<project-id>", "Project ID or path such as '42' or full project path 'group/subgroup/project-name'")
+
+    listCmd.command("group")
+        .description("List a group's Container Repositories.")
+        .action(actionListGroupRepositories)
+        .argument("<group-id>", "Group ID or path such as '42' or full group or subgroup path 'group/subgroup'")
+
+    // clean
     program.command("clean")
         .summary("Clean tags from a container repository.")
         .description(
@@ -36,7 +51,7 @@ async function main(){
 
 }
 
-async function actionListRepositories(opts: {startIndex: string, endIndex: string, concurrency: string, output: string}) {
+async function actionListAllRepositories(opts: {startIndex: string, endIndex: string, concurrency: string, output: string}) {
 
     checkEnvironment()
 
@@ -70,6 +85,16 @@ async function actionCleanRepository(repositoryId: string, opts: {
         50,
         opts.outputTags
     )
+}
+
+async function actionListProjectRepositories(projectId: string | number){
+    const cleaner = new GitLabContainerRepositoryCleaner(true, 1)
+    await cleaner.getProjectContainerRepositories(projectId)
+}
+
+async function actionListGroupRepositories(groupId: string | number){
+    const cleaner = new GitLabContainerRepositoryCleaner(true, 1)
+    await cleaner.getGroupContainerRepositories(groupId)
 }
 
 function checkEnvironment(){

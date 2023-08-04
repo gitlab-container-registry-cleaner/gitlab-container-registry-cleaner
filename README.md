@@ -4,7 +4,12 @@ CLI to list and cleanup your GitLab Container Registry and Container Repositorie
 
 ## Usage
 
-Clone this repository and run `./gitlab-container-registry-cleaner`
+Clone this repository and run:
+
+```sh
+npm install
+./gitlab-container-registry-cleaner --help
+```
 
 _Note: I can publish this as a package in `npm` public registry if someone deems it useful, just ask for it :)_
 
@@ -24,12 +29,19 @@ export GITLAB_TOKEN="xxx"
 
 ```sh
 # Check all Container Repository from 1 to 10000 with a concurrency of 20 by default
-./gitlab-container-registry-cleaner list 
+./gitlab-container-registry-cleaner list all
 
 # Customize concurrency and ID range
 # Example to check between ID 500-1000 with 10 concurrency (up to 10 requests in parallel)
 # Output result to /tmp/repositories.json
-./gitlab-container-registry-cleaner list -s 500 -e 1000 -c 10 -o /tmp/repositories.json
+./gitlab-container-registry-cleaner list all -s 500 -e 1000 -c 10 -o /tmp/repositories.json
+
+# List project or group repositories
+./gitlab-container-registry-cleaner list project 42
+./gitlab-container-registry-cleaner list project mygroup/myproject
+
+./gitlab-container-registry-cleaner list group 666
+./gitlab-container-registry-cleaner list group mygroup/mysubgroup
 ```
 
 ### Cleanup Container Repositories

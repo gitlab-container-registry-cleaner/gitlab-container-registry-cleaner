@@ -112,6 +112,16 @@ export class GitLabContainerRepositoryCleaner {
         
     }
 
+    public async getProjectContainerRepositories(projectId: string | number){
+        const repos = await this.gl.ContainerRegistry.allRepositories({projectId: projectId, tagsCount: true})
+        console.info(repos)
+    }
+
+    public async getGroupContainerRepositories(groupId: string | number){
+        const repos = await this.gl.ContainerRegistry.allRepositories({groupId: groupId, tagsCount: true})
+        console.info(repos)
+    }
+
     /**
      * Get all tags of a Project's Container Repository. Uses GitLab API pagination to run concurrent requests across multiple Promises,
      * each Promises having a range of pages to fetch.
