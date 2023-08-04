@@ -1,7 +1,4 @@
 import { Gitlab, RegistryRepositorySchema, CondensedRegistryRepositoryTagSchema, RegistryRepositoryTagSchema } from '@gitbeaker/rest';
-import { off } from 'process';
-import Queue from 'queue'
-import { threadId } from 'worker_threads';
 
 export class GitLabContainerRepositoryCleaner {
 

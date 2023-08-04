@@ -1,9 +1,7 @@
 import { Command } from 'commander';
-import { GitLabContainerRepositoryCleaner } from './lib/cleaner';
+import { GitLabContainerRepositoryCleaner } from './cleaner';
 
 async function main(){
-    // get_all_container_registries()
-    // delete_container_repository_tags(341, 197)
     const program = new Command();
 
     program
