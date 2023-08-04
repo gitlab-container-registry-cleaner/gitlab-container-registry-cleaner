@@ -113,6 +113,14 @@ class GitLabContainerRepositoryCleaner {
         }
         return result;
     }
+    async getProjectContainerRepositories(projectId) {
+        const repos = await this.gl.ContainerRegistry.allRepositories({ projectId: projectId, tagsCount: true });
+        console.info(repos);
+    }
+    async getGroupContainerRepositories(groupId) {
+        const repos = await this.gl.ContainerRegistry.allRepositories({ groupId: groupId, tagsCount: true });
+        console.info(repos);
+    }
     /**
      * Get all tags of a Project's Container Repository. Uses GitLab API pagination to run concurrent requests across multiple Promises,
      * each Promises having a range of pages to fetch.
@@ -122,16 +130,15 @@ class GitLabContainerRepositoryCleaner {
      * @param tagPerPage number of tags per page
      * @returns
      */
-    async getRepositoryTagsConcurrently(projectId, repositoryId, tagPerPage = 50) {
-        const repo = await this.gl.ContainerRegistry.showRepository(repositoryId, { tagsCount: true });
-        const tagCount = repo.tags_count;
+    async getRepositoryTagsConcurrently(repository, tagPerPage = 50) {
+        const tagCount = repository.tags_count;
         const pageTotal = Math.ceil(tagCount / tagPerPage);
         const pages = [...Array(pageTotal).keys()].map(i => i + 1);
         console.info(`🔭 Listing ${tagCount} tags (${pageTotal} pages, ${tagPerPage} / page)`);
         // Run all promises in parallel and fetch result later
         let tagListPromises = [];
         for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++) {
-            const tagListProm = this.getRepositoryTagsForPages(projectId, repositoryId, pages, tagPerPage, pageTotal);
+            const tagListProm = this.getRepositoryTagsForPages(repository.project_id, repository.id, pages, tagPerPage, pageTotal);
             tagListPromises.push(tagListProm);
         }
         let allTags = [];
@@ -160,8 +167,8 @@ class GitLabContainerRepositoryCleaner {
         }
         return result;
     }
-    async cleanupContainerRepositoryTags(projectId, repositoryId, keepTagRegex = exports.DEFAULT_KEEP_REGEX, deleteTagRegex = exports.DEFAULT_DELETE_REGEX, olderThanDays = 90, tagPerPage = 50, outputTagsToFile = "") {
-        console.info(`🧹 Cleaning image tags for project ${projectId} repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`);
+    async cleanupContainerRepositoryTags(repositoryId, keepTagRegex = exports.DEFAULT_KEEP_REGEX, deleteTagRegex = exports.DEFAULT_DELETE_REGEX, olderThanDays = 90, tagPerPage = 50, outputTagsToFile = "") {
+        console.info(`🧹 Cleaning image tags for repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`);
         // warn user if parameters doesn't make sense or forgot to disable safety
         if (keepTagRegex == exports.DEFAULT_KEEP_REGEX || deleteTagRegex == exports.DEFAULT_DELETE_REGEX) {
             console.warn(``);
@@ -173,7 +180,9 @@ class GitLabContainerRepositoryCleaner {
         }
         const now = new Date();
         // retrieve all tags
-        const allTags = await this.getRepositoryTagsConcurrently(projectId, repositoryId, tagPerPage);
+        const repository = await this.getContainerRepository(repositoryId);
+        const projectId = repository.project_id;
+        const allTags = await this.getRepositoryTagsConcurrently(repository, tagPerPage);
         // filter out tags matching keep regex
         console.log("🕸️  Filtering tag names with regex...");
         const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex, deleteTagRegex);
@@ -200,6 +209,9 @@ class GitLabContainerRepositoryCleaner {
         else {
             console.info(`✅ Deleted ${deleteTagCount} tags !`);
         }
+    }
+    async getContainerRepository(id) {
+        return this.gl.ContainerRegistry.showRepository(id, { tagsCount: true });
     }
     /**
      * Filter tags based on regex. All tags matching regex are kept.
