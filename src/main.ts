@@ -23,8 +23,7 @@ async function main(){
             "Clean tags from a container repository concurrently using given regex and age filter. " +
             "Only tags matching BOTH regex and age will be deleted. " +
             "THIS IS A DESTRUCTIVE ACTION. Use with care.")
-        .requiredOption("-p, --project-id <id>", "Project ID containing repository to cleanup.")
-        .requiredOption("-r, --repository-id <id>", "Container Repository ID to cleanup.")
+        .argument("<repository-id>", "Container Repository ID to cleanup.")
         .option("-k, --keep-regex <regex>", "Tags matching this regex will be kept. Match everything by default for satefy.", ".*")
         .option("-d, --delete-regex <regex>", "Tags matching this regex will be deleted. Do not match anything by default for safety .", "^$")
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
@@ -50,9 +49,7 @@ async function actionListRepositories(opts: {startIndex: string, endIndex: strin
     )
 }
 
-async function actionCleanRepository( opts: { 
-        projectId: string, 
-        repositoryId: string,
+async function actionCleanRepository(repositoryId: string, opts: { 
         keepRegex: string, 
         deleteRegex: string,
         olderThanDays: string, 
@@ -66,8 +63,7 @@ async function actionCleanRepository( opts: {
     const cleaner = new GitLabContainerRepositoryCleaner(opts.dryRun, Number.parseInt(opts.concurrency))
     
     await cleaner.cleanupContainerRepositoryTags(
-        Number.parseInt(opts.projectId), 
-        Number.parseInt(opts.repositoryId),
+        Number.parseInt(repositoryId),
         opts.keepRegex, 
         opts.deleteRegex,
         Number.parseInt(opts.olderThanDays),

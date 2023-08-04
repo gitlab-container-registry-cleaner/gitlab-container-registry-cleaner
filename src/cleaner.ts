@@ -121,11 +121,9 @@ export class GitLabContainerRepositoryCleaner {
      * @param tagPerPage number of tags per page
      * @returns 
      */
-    private async getRepositoryTagsConcurrently(projectId: number, repositoryId: number, tagPerPage=50){
+    private async getRepositoryTagsConcurrently(repository: RegistryRepositorySchema, tagPerPage=50){
 
-        const repo = await this.gl.ContainerRegistry.showRepository(repositoryId, { tagsCount: true})
-
-        const tagCount = repo.tags_count!
+        const tagCount = repository.tags_count!
         const pageTotal = Math.ceil(tagCount / tagPerPage)
         const pages = [ ...Array(pageTotal).keys() ].map( i => i+1);
 
@@ -135,7 +133,7 @@ export class GitLabContainerRepositoryCleaner {
         let tagListPromises : Promise<CondensedRegistryRepositoryTagSchema[]>[] = []
         for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++){
 
-            const tagListProm = this.getRepositoryTagsForPages(projectId, repositoryId, pages, tagPerPage, pageTotal)
+            const tagListProm = this.getRepositoryTagsForPages(repository.project_id, repository.id, pages, tagPerPage, pageTotal)
             tagListPromises.push(tagListProm)
         }
 
@@ -176,7 +174,6 @@ export class GitLabContainerRepositoryCleaner {
     }
 
     public async cleanupContainerRepositoryTags(
-        projectId: number, 
         repositoryId: number, 
         keepTagRegex = DEFAULT_KEEP_REGEX, 
         deleteTagRegex = DEFAULT_DELETE_REGEX,
@@ -185,7 +182,7 @@ export class GitLabContainerRepositoryCleaner {
         outputTagsToFile = ""
     ){
 
-        console.info(`🧹 Cleaning image tags for project ${projectId} repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`)
+        console.info(`🧹 Cleaning image tags for repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`)
 
         // warn user if parameters doesn't make sense or forgot to disable safety
         if (keepTagRegex == DEFAULT_KEEP_REGEX || deleteTagRegex == DEFAULT_DELETE_REGEX){
@@ -201,7 +198,9 @@ export class GitLabContainerRepositoryCleaner {
         const now = new Date()
 
         // retrieve all tags
-        const allTags = await this.getRepositoryTagsConcurrently(projectId, repositoryId, tagPerPage)
+        const repository = await this.getContainerRepository(repositoryId)
+        const projectId = repository.project_id
+        const allTags = await this.getRepositoryTagsConcurrently(repository, tagPerPage)
 
         // filter out tags matching keep regex
 
@@ -236,6 +235,10 @@ export class GitLabContainerRepositoryCleaner {
         } else {
             console.info(`✅ Deleted ${deleteTagCount} tags !`)
         }
+    }
+
+    private async getContainerRepository(id: number){
+        return this.gl.ContainerRegistry.showRepository(id, { tagsCount: true})
     }
 
     /**

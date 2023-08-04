@@ -4,6 +4,10 @@ CLI to list and cleanup your GitLab Container Registry and Container Repositorie
 
 ## Usage
 
+Clone this repository and run `./gitlab-container-registry-cleaner`
+
+_Note: I can publish this as a package in `npm` public registry if someone deems it useful, just ask for it :)_
+
 Requirements:
 
 - Node 18+
@@ -35,20 +39,38 @@ Run cleanup for a project's Container Repository. Note that by default **cleanup
 Example usage:
 
 ```sh
-# Clean repository 161 of project 486, keep tags matching releases
+# Cleanup repository 161
+# keep tags matching releases
 # Will dry-run by default
-./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*'
+./gitlab-container-registry-cleaner clean 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*'
 
 # Output JSON list of tags that would be deleted to a file
 # Check their name and created date
-./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --output-tags /tmp/tags.json
+./gitlab-container-registry-cleaner clean 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --output-tags /tmp/tags.json
 cat /tmp/tags.json | jq '.[] | .name + "\t" + .created_at ' -r
 
 # Once satisfied, run without dry-run
-./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --no-dry-run
+./gitlab-container-registry-cleaner clean 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --no-dry-run
 ```
 
-Example keep/delete regex you can use:
+### How do I known my Container Repository ID? 
+
+Repository ID is visible in the URL when navigating to your project Container Repository in _Deploy > Container Registry > [repository name]_. URL looks like:
+
+``` sh
+# Repository ID is 42
+https://gitlab.mycompany.net/somegroup/myproject/container_registry/42
+```
+
+Alternatively, list all available Container Repository to find repositories for your project: 
+
+```
+./gitlab-container-registry-cleaner list
+```
+
+_Note: will add a command to list Container Repository for a project_
+
+### Example keep/delete regex
 
 ```sh
 # Keep releases and remove everything else
@@ -61,6 +83,8 @@ Example keep/delete regex you can use:
 # Delete all tags - USE WITH CARE
 -k '$^' -d '.*'
 ```
+
+### How does cleanup work?
 
 Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.gitlab.com/ee/user/packages/container_registry/reduce_container_registry_storage.html#how-the-cleanup-policy-works). Cleaner calls GitLab REST API concurrently such as:
 
