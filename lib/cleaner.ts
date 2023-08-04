@@ -71,7 +71,7 @@ export class GitLabContainerRepositoryCleaner {
             if (repoId !== undefined){
 
                 if (repositoryIds.length % 100 == 0){
-                    console.info(`Checking container repository IDs ${totalLength-repositoryIds.length}/${totalLength}`)
+                    console.info(`Checking container repository IDs ${totalLength-repositoryIds.length}/${totalLength}...`)
                 }
 
                 try {
@@ -142,7 +142,7 @@ export class GitLabContainerRepositoryCleaner {
             if(page !== undefined){
 
                 if (pages.length % 10 == 0){
-                    console.info(`Listing Container Repository tags page ${totalPages-pages.length}/${totalPages}`)
+                    console.info(`Listing Container Repository tags page ${totalPages-pages.length}/${totalPages}...`)
                 }
 
                 const tags = await this.gl.ContainerRegistry.allTags(projectId, repositoryId, { page: page, perPage: perPage })
@@ -157,6 +157,7 @@ export class GitLabContainerRepositoryCleaner {
         projectId: number, 
         repositoryId: number, 
         keepTagRegex = '.*', 
+        removeTagRegex = "^$",
         olderThanDays = 7,
         tagPerPage = 50
     ){
@@ -167,18 +168,18 @@ export class GitLabContainerRepositoryCleaner {
         const allTags = await this.getRepositoryTagsConcurrently(projectId, repositoryId, tagPerPage)
 
         // filter out tags matching keep regex
-        const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex)
+        const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex, removeTagRegex)
 
-        console.info(`Found ${regexFilteredTags.length} tags matching regex '${keepTagRegex}'`)
+        console.info(`Found ${regexFilteredTags.length} tags matching '${removeTagRegex}' but not matching '${keepTagRegex}'`)
 
         // filter out tags younger than days
         const deleteTags = await this.filterTagsCreationDate(projectId, repositoryId, regexFilteredTags, olderThanDays)
         const deleteTagCount = deleteTags.length
 
-        console.info(`Found ${deleteTagCount} tags to delet (matching regex and creation date).`)
+        console.info(`Found ${deleteTagCount} tags created ${olderThanDays} days ago or earlier`)
 
         // Delete tags in parallel
-        console.info(`Deleting ${deleteTagCount} (dry-run: ${this.dryRun})...`)
+        console.info(`Deleting ${deleteTagCount} (dry-run: ${this.dryRun})`)
 
         this.deleteTagsConcurrently(projectId, repositoryId, deleteTags)
 
@@ -189,9 +190,17 @@ export class GitLabContainerRepositoryCleaner {
      * Filter tags based on regex. All tags matching regex are kept.
      * Return tags to remove.
      */
-    private filterTagsRegex(tags: CondensedRegistryRepositoryTagSchema[], keepTagRegex: string){
-        const tagRegex = new RegExp(keepTagRegex)
-        return tags.filter(t => !tagRegex.test(t.name))
+    private filterTagsRegex(tags: CondensedRegistryRepositoryTagSchema[], keepTagRegexStr: string, removeTagRegexStr: string){
+        const keepTagRegex = new RegExp(keepTagRegexStr)
+        const removeTagRegex = new RegExp(removeTagRegexStr)
+        
+        let deleteCandidate : CondensedRegistryRepositoryTagSchema[] = []
+
+        // filter out tags matching keepTagRegex
+        deleteCandidate = tags.filter(t => !keepTagRegex.test(t.name))
+
+        // filter in tags matching removeTagRegex
+        return deleteCandidate.filter(t => removeTagRegex.test(t.name))
     }
 
     private async getTagDetailsConcurrently(projectId: number, repositoryId: number, tags: CondensedRegistryRepositoryTagSchema[]){
@@ -226,7 +235,7 @@ export class GitLabContainerRepositoryCleaner {
             if (t !== undefined){
 
                 if (tags.length % 100 == 0){
-                    console.info(`Fetch tag details ${totalTags-tags.length}/${totalTags}`)
+                    console.info(`Fetch tag details ${totalTags-tags.length}/${totalTags}...`)
                 }
     
                 try {

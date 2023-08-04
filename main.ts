@@ -26,7 +26,8 @@ async function main(){
             "THIS IS A DESTRUCTIVE ACTION. Use with care.")
         .argument("project-id")
         .argument("registry-id")
-        .option("-r, --keep-regex <regex>", "Tags matching this regex will be deleted. Do not match anything by default.", ".*")
+        .option("-k, --keep-regex <regex>", "Tags matching this regex will be kept. Match everything by default.", ".*")
+        .option("-r, --remove-regex <regex>", "Tags matching this regex will be deleted of they do not already match keep regex.", "^$")
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
@@ -48,7 +49,7 @@ async function action_list_repositories(opts: {startIndex: string, endIndex: str
 }
 
 async function action_clean_repository(projectId: string, repositoryId: string, 
-        opts: { keepRegex: string, olderThanDays: string, concurrency: string, noDryRun: boolean}){
+        opts: { keepRegex: string, removeRegex: string, olderThanDays: string, concurrency: string, noDryRun: boolean}){
 
     const cleaner = new GitLabContainerRepositoryCleaner(!opts.noDryRun, Number.parseInt(opts.concurrency))
     
@@ -56,6 +57,7 @@ async function action_clean_repository(projectId: string, repositoryId: string,
         Number.parseInt(projectId), 
         Number.parseInt(repositoryId),
         opts.keepRegex, 
+        opts.removeRegex,
         Number.parseInt(opts.olderThanDays),
         50
     )
