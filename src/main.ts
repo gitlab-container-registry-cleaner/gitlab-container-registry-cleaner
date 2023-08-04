@@ -29,6 +29,7 @@ async function main(){
         .option("-a, --older-than-days <number>", "Tags older than days will be deleted.", "90")
         .option("-c, --concurrency <number>", "Number of promises running concurrently when requesting GitLab API", "20")
         .option("--no-dry-run", "Disable dry-run. Dry run is enabled by default.")
+        .option("--output-tags <file>", "Output tags to be deleted to specified file as JSON list. Useful with dry-run to check nothing important will be deleted.")
         .action(actionCleanRepository)
 
     await program.parseAsync()
@@ -56,8 +57,11 @@ async function actionCleanRepository( opts: {
         deleteRegex: string,
         olderThanDays: string, 
         concurrency: string, 
-        dryRun: boolean
+        dryRun: boolean,
+        outputTags?: string
     }){
+
+    console.info(opts)
 
     checkEnvironment()
 
@@ -69,7 +73,8 @@ async function actionCleanRepository( opts: {
         opts.keepRegex, 
         opts.deleteRegex,
         Number.parseInt(opts.olderThanDays),
-        50
+        50,
+        opts.outputTags
     )
 }
 

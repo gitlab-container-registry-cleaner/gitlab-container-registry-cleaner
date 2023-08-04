@@ -31,12 +31,19 @@ export GITLAB_TOKEN="xxx"
 
 Run cleanup for a project's Container Repository. Note that by default **cleanup will dry-run and regex won't match anything for safety reasons**. 
 
+Example usage:
+
 ```sh
 # Clean repository 161 of project 486, keep tags matching releases
 # Will dry-run by default
 ./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*'
 
-# Once satisfied of results, run without dry-run
+# Output JSON list of tags that would be deleted to a file
+# Check their name and created date
+./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --output-tags /tmp/tags.json
+cat /tmp/tags.json | jq '.[] | .name + "\t" + .created_at ' -r
+
+# Once satisfied, run without dry-run
 ./gitlab-container-registry-cleaner clean -p 486 -r 161 -k 'v?[0-9]+\.[0-9]+\.[0-9]+.*' -d '.*' --no-dry-run
 ```
 

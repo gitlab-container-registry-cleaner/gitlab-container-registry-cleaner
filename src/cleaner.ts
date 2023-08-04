@@ -1,6 +1,7 @@
 import { Gitlab, RegistryRepositorySchema, CondensedRegistryRepositoryTagSchema, RegistryRepositoryTagSchema } from '@gitbeaker/rest';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import * as fs from 'fs';
 
 export const DEFAULT_KEEP_REGEX = ".*"
 export const DEFAULT_DELETE_REGEX = "^$"
@@ -161,7 +162,8 @@ export class GitLabContainerRepositoryCleaner {
         keepTagRegex = DEFAULT_KEEP_REGEX, 
         deleteTagRegex = DEFAULT_DELETE_REGEX,
         olderThanDays = 90,
-        tagPerPage = 50
+        tagPerPage = 50,
+        outputTagsToFile = ""
     ){
 
         console.info(`🧹 Cleaning image tags for project ${projectId} repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`)
@@ -197,6 +199,11 @@ export class GitLabContainerRepositoryCleaner {
         const deleteTagCount = deleteTags.length
 
         console.info(`💀 Found ${deleteTagCount} tags to delete`)
+
+        if (outputTagsToFile){
+            console.info(`📝 Writing tag list to ${outputTagsToFile}`)
+            await this.writeTagsToFile(outputTagsToFile, deleteTags)
+        }
 
         // Delete tags in parallel
         if (this.dryRun) {
@@ -327,7 +334,7 @@ export class GitLabContainerRepositoryCleaner {
             if(tag !== undefined){
 
                 if (tags.length % 100 == 0){
-                    console.info(`   Deleting tag ${tagTotal-tags.length}/${tagTotal}...`)
+                    console.info(`    Deleting tag ${tagTotal-tags.length}/${tagTotal}...`)
                 }
     
                 if(!this.dryRun){
@@ -335,6 +342,10 @@ export class GitLabContainerRepositoryCleaner {
                 } 
             }   
         }
+    }
+
+    private async writeTagsToFile(outputTagsToFile: string, tags: RegistryRepositoryTagSchema[]){
+        fs.writeFileSync(outputTagsToFile, JSON.stringify(tags, undefined, "  "))
     }
 
 }
