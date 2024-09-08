@@ -1,3 +1,11 @@
+- [Usage](#usage)
+  - [List Container Repositories for entire instance, groups or projects](#list-container-repositories-for-entire-instance-groups-or-projects)
+  - [Cleanup Container Repositories](#cleanup-container-repositories)
+  - [How do I known my Container Repository ID?](#how-do-i-known-my-container-repository-id)
+  - [Example keep/delete regex](#example-keepdelete-regex)
+- [How does cleanup work?](#how-does-cleanup-work)
+- [License](#license)
+
 # GitLab Container Registry cleaner
 
 CLI to list and cleanup your GitLab Container Registry and Container Repositories.
@@ -97,7 +105,7 @@ Alternatively, use `./gitlab-container-registry-cleaner list` (see above)
 -k '$^' -d '.*'
 ```
 
-### How does cleanup work?
+## How does cleanup work?
 
 Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.gitlab.com/ee/user/packages/container_registry/reduce_container_registry_storage.html#how-the-cleanup-policy-works). Cleaner calls GitLab REST API concurrently such as:
 
@@ -107,3 +115,6 @@ Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.git
 - Filter in tags older than specified number of days 
 - Delete 'em !
 
+## License
+
+[Apache License](./LICENSE.txt)
