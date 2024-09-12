@@ -1,390 +1,533 @@
-import { Gitlab, RegistryRepositorySchema, CondensedRegistryRepositoryTagSchema, RegistryRepositoryTagSchema } from '@gitbeaker/rest';
-import * as readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
-import * as fs from 'fs';
-
-export const DEFAULT_KEEP_REGEX = ".*"
-export const DEFAULT_DELETE_REGEX = "^$"
-
-export class GitLabContainerRepositoryCleaner {
-
-    gl: InstanceType<typeof Gitlab<false>> 
-
-    // Max number of promises running in parallel
-    // May be less number of objects to manipulate exceed concurrency
-    concurrency: number
-
-    // Enable dry run mode
-    // If true, only read operation are performed
-    dryRun: boolean
-
-    constructor(dryRun=true, concurrency=20){
-        this.gl = new Gitlab({
-            token: process.env.GITLAB_TOKEN || "",
-            host:process.env.GITLAB_HOST || "",
-        }) 
-
-        this.dryRun = dryRun
-        this.concurrency = concurrency
-    }
-
-    /**
-     * Get Container Repositories in a range of ID. Look for repository for each ID in range concurrently using GitLab API:
-     * a 404 indicated repository does not exists, otherwise repository data is returned. 
-     * @param startIndex repository ID to start from
-     * @param endIndex repository ID to end by
-     * @param concurrent number of promises awaited concurrently
-     */
-    public async getContainerRepositoriesConcurrently(startIndex=1, endIndex=1000, output=""){
-
-        if (!output){
-            console.info("You didn't specify an output path to write results. By default results will be shown on stdout.")
-            console.info("Output may be long, it's possible your console buffer won't show everything.")  
-            console.info("This command may run for a long time and some result may be lost.")  
-            console.info("Use -o flag to specify a file such as -o /tmp/repositories.json")
-            console.info("")
-            
-            await this.promptUser("Press CTRL+C to interrupt or ENTER to continue...")
-        }
-
-        const totalLength = endIndex - startIndex + 1
-        const repositoryIds = [ ...Array(totalLength).keys() ].map( i => i+startIndex);
-
-        console.info(`🔭 Requesting container repository IDs [${startIndex}-${endIndex}] concurrency ${this.concurrency}`)
-
-        let repositoriesPromises : Promise<RegistryRepositorySchema[]>[] = []
-        for (let i = 0; i <= this.concurrency-1; i++){
-            const repositoriesProm = this.getContainerRepositories(repositoryIds, totalLength)
-            repositoriesPromises.push(repositoriesProm)
-        }
-
-        let repositories : RegistryRepositorySchema[] = []
-        for (const repositoryProm of repositoriesPromises){
-            const partialRepositories = await repositoryProm
-            repositories = repositories.concat(partialRepositories)
-        }
-
-        console.info(`   Found ${repositories.length} repositories`)
-        
-        if(output){
-            console.info(`📝 Writing repository list as JSON to ${output}`)
-            this.writeDataJsonToFile(output, repositories)
-        } else {
-            console.info(``)
-            console.info(repositories)
-            console.info(``)
-            console.info(`Repositories have been outputted to stdout. Use -o to write results as JSON to file.`)
-        }
-    }
-
-
-    /**
-     * Used by getContainerRepositoriesConcurrently Promises to fetch repositories from array
-     * Each Promise run this function
-     */
-    private async getContainerRepositories(repositoryIds: number[], totalLength: number){
-
-        const result : RegistryRepositorySchema[] = []
-
-        while (repositoryIds.length > 0){
-            
-            const repoId = repositoryIds.pop()
-            
-            if (repoId !== undefined){
-
-                if (repositoryIds.length % 100 == 0){
-                    console.info(`  Checking container repository IDs ${totalLength-repositoryIds.length}/${totalLength}...`)
-                }
-
-                try {
-                    const repo = await this.gl.ContainerRegistry.showRepository(repoId, {tagsCount: true})
-                    result.push(repo)
-                } catch(e: any) {
-                    const status = e?.cause?.response?.status
-                    if ( status != 404 && status != 403){
-                        console.error(`Non-404 error listing repository ID ${repoId}`, e)
-                    }
-                }
-            }
-        }
-
-        return result
-        
-    }
-
-    public async getProjectContainerRepositories(projectId: string | number){
-        const repos = await this.gl.ContainerRegistry.allRepositories({projectId: projectId, tagsCount: true})
-        console.info(repos)
-    }
-
-    public async getGroupContainerRepositories(groupId: string | number){
-        const repos = await this.gl.ContainerRegistry.allRepositories({groupId: groupId, tagsCount: true})
-        console.info(repos)
-    }
-
-    /**
-     * Get all tags of a Project's Container Repository. Uses GitLab API pagination to run concurrent requests across multiple Promises,
-     * each Promises having a range of pages to fetch.
-     * 
-     * @param projectId 
-     * @param repositoryId 
-     * @param tagPerPage number of tags per page
-     * @returns 
-     */
-    private async getRepositoryTagsConcurrently(repository: RegistryRepositorySchema, tagPerPage=50){
-
-        const tagCount = repository.tags_count!
-        const pageTotal = Math.ceil(tagCount / tagPerPage)
-        const pages = [ ...Array(pageTotal).keys() ].map( i => i+1);
-
-        console.info(`🔭 Listing ${tagCount} tags (${pageTotal} pages, ${tagPerPage} / page)`)
-
-        // Run all promises in parallel and fetch result later
-        let tagListPromises : Promise<CondensedRegistryRepositoryTagSchema[]>[] = []
-        for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++){
-
-            const tagListProm = this.getRepositoryTagsForPages(repository.project_id, repository.id, pages, tagPerPage, pageTotal)
-            tagListPromises.push(tagListProm)
-        }
-
-        let allTags : CondensedRegistryRepositoryTagSchema[] = []
-        for (const tagListProm of tagListPromises){
-            const tags = await tagListProm
-            allTags = allTags.concat(tags)
-        }
-
-        console.info(`   Found ${allTags.length} tags`)
-
-        return allTags
-    }
-
-
-    /**
-     * Fetch Container Repository tags for the given pages sequentially. 
-     * Used by promises of getRepositoryTagsConcurrently
-     */
-    private async getRepositoryTagsForPages(projectId: number, repositoryId: number, pages: number[], perPage: number, totalPages: number){
-        
-        let result: CondensedRegistryRepositoryTagSchema[] = []
-        while(pages.length > 0){
-            const page = pages.pop()
-
-            if(page !== undefined){
-
-                if (pages.length % 10 == 0){
-                    console.info(`   Listing Container Repository tags page ${totalPages-pages.length}/${totalPages}...`)
-                }
-
-                const tags = await this.gl.ContainerRegistry.allTags(projectId, repositoryId, { page: page, perPage: perPage })
-                result = result.concat(tags)
-            }
-        }
-
-        return result
-    }
-
-    public async cleanupContainerRepositoryTags(
-        repositoryId: number, 
-        keepTagRegex = DEFAULT_KEEP_REGEX, 
-        deleteTagRegex = DEFAULT_DELETE_REGEX,
-        olderThanDays = 90,
-        tagPerPage = 50,
-        outputTagsToFile = ""
-    ){
-
-        console.info(`🧹 Cleaning image tags for repository ${repositoryId}. Keep tags matching '${keepTagRegex}' and delete tags older than ${olderThanDays} days. (dry-run: ${this.dryRun})`)
-
-        // warn user if parameters doesn't make sense or forgot to disable safety
-        if (keepTagRegex == DEFAULT_KEEP_REGEX || deleteTagRegex == DEFAULT_DELETE_REGEX){
-            console.warn(``)
-            console.warn(`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't mach anything for safety reasons.`)
-            console.warn(`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`)
-            console.warn(`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`)
-            console.warn(``)
-            
-            await this.promptUser("Press ENTER to continue...")
-        }
-
-        const now = new Date()
-
-        // retrieve all tags
-        const repository = await this.getContainerRepository(repositoryId)
-        const projectId = repository.project_id
-        const allTags = await this.getRepositoryTagsConcurrently(repository, tagPerPage)
-
-        // filter out tags matching keep regex
-
-        console.log("🕸️  Filtering tag names with regex...")
-        const regexFilteredTags = this.filterTagsRegex(allTags, keepTagRegex, deleteTagRegex)
-
-        console.info(`   Found ${regexFilteredTags.length} tags matching '${deleteTagRegex}' but not matching '${keepTagRegex}'`)
-
-        console.info(`👴 Checking tag creation date to filter out tags younger than ${olderThanDays} days`)
-
-        const deleteTags = await this.filterTagsCreationDate(projectId, repositoryId, regexFilteredTags, olderThanDays)
-        const deleteTagCount = deleteTags.length
-
-        console.info(`💀 Found ${deleteTagCount} tags to delete`)
-
-        if (outputTagsToFile){
-            console.info(`📝 Writing tag list to ${outputTagsToFile}`)
-            await this.writeDataJsonToFile(outputTagsToFile, deleteTags)
-        }
-
-        // Delete tags in parallel
-        if (this.dryRun) {
-            console.info(`🔥 [DRY-RUN] Would delete ${deleteTagCount} tags`)
-        } else {
-            console.info(`🔥 Deleting ${deleteTagCount} tags...`)
-        }
-        
-        this.deleteTagsConcurrently(projectId, repositoryId, deleteTags)
-
-        if (this.dryRun) {
-            console.info(`✅ [DRY-RUN] Would have deleted ${deleteTagCount} tags`)
-        } else {
-            console.info(`✅ Deleted ${deleteTagCount} tags !`)
-        }
-    }
-
-    private async getContainerRepository(id: number){
-        return this.gl.ContainerRegistry.showRepository(id, { tagsCount: true})
-    }
-
-    /**
-     * Filter tags based on regex. All tags matching regex are kept.
-     * Return tags to remove.
-     */
-    private filterTagsRegex(tags: CondensedRegistryRepositoryTagSchema[], keepTagRegexStr: string, deleteTagRegexStr: string){
-        const keepTagRegex = new RegExp(keepTagRegexStr)
-        const deleteTagRegex = new RegExp(deleteTagRegexStr)
-        
-        let deleteCandidate : CondensedRegistryRepositoryTagSchema[] = []
-
-        // filter out tags matching keepTagRegex
-        deleteCandidate = tags.filter(t => !keepTagRegex.test(t.name))
-
-        // filter in tags matching removeTagRegex
-        return deleteCandidate.filter(t => deleteTagRegex.test(t.name))
-    }
-
-    private async getTagDetailsConcurrently(projectId: number, repositoryId: number, tags: CondensedRegistryRepositoryTagSchema[]){
-
-        const detailedTagsPromises : Promise<RegistryRepositoryTagSchema[]>[] = []
-        const totalTags = tags.length
-        for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++){
-            const tagDetailProm = this.getTagDetails(projectId, repositoryId, tags, totalTags)
-            detailedTagsPromises.push(tagDetailProm)
-        }
-
-        let result : RegistryRepositoryTagSchema[] = []
-        for (const tagDetailProm of detailedTagsPromises){
-            const detailedTags = await tagDetailProm
-            result = result.concat(detailedTags)
-        }
-
-        return result
-    }
-
-    /**
-     * Used by getTagDetailsConcurrently Promises to fetch tags from array
-     */
-     private async getTagDetails(projectId: number, repositoryId: number, tags: CondensedRegistryRepositoryTagSchema[], totalTags: number){
-
-        let result : RegistryRepositoryTagSchema[] = []
-
-        while(tags.length > 0){
-
-            const t = tags.pop()
-
-            if (t !== undefined){
-
-                if (tags.length % 100 == 0){
-                    console.info(`   Fetching tag details ${totalTags-tags.length}/${totalTags}...`)
-                }
-    
-                try {
-                    const tagDetails = await this.gl.ContainerRegistry.showTag(projectId, repositoryId, t.name)
-                    result.push(tagDetails)
-                } catch(e: any){
-                    const status = e?.cause?.response?.status
-                    if ( status != 404){
-                        console.error(`Non-404 error getting tag ${t.name}`, e)
-                    }
-                }       
-            }
-
-        }
-
-        return result
-    }
-
-    private async filterTagsCreationDate(
-        projectId: number, 
-        repositoryId: number, 
-        tags: CondensedRegistryRepositoryTagSchema[], 
-        olderThanDays: number
-    ){
-        const now = new Date()
-
-        const detailedTags = await this.getTagDetailsConcurrently(projectId, repositoryId, tags)
-
-        // check all tags for creation date
-        const deleteTags = detailedTags.filter(t => {
-            const createdDate = new Date(t.created_at)
-            const tagAgeDays = (now.getTime() - createdDate.getTime()) / (1000 * 3600 * 24)
-
-            return tagAgeDays > olderThanDays
-        })
-
-        return deleteTags
-    }
-
-    private async deleteTagsConcurrently(projectId: number, repositoryId: number, tags:  RegistryRepositoryTagSchema[]){
-        const deleteTagsPromises : Promise<void>[] = []
-        const tagTotal = tags.length
-        for (let promiseIndex = 0; promiseIndex < this.concurrency; promiseIndex++){
-            const delTagProm = this.deleteTags(projectId, repositoryId, tags, tagTotal)
-            deleteTagsPromises.push(delTagProm)
-        }
-
-        for(const delTagProm of deleteTagsPromises){
-            await delTagProm
-        }
-    }
-
-    /**
-     * Used by deleteTagsConcurrently to delete tags from array
-     */
-    private async deleteTags(projectId: number, repositoryId: number, tags: RegistryRepositoryTagSchema[], tagTotal: number){
-
-        while(tags.length > 0){
-            const tag = tags.pop()
-
-            if(tag !== undefined){
-
-                if (tags.length % 100 == 0){
-                    console.info(`    Deleting tag ${tagTotal-tags.length}/${tagTotal}...`)
-                }
-    
-                if(!this.dryRun){
-                    await this.gl.ContainerRegistry.removeTag(projectId, repositoryId, tag.name)
-                } 
-            }   
-        }
-    }
-
-    private async writeDataJsonToFile(outputTagsToFile: string, data: any){
-        fs.writeFileSync(outputTagsToFile, JSON.stringify(data, undefined, "  "))
-    }
-
-    private async promptUser(msg: string){
-        const rl = readline.createInterface({ input, output });
-        const answer = await rl.question(msg);
-        rl.close();
-    }
-
+import * as fs from "node:fs";
+import { stdin } from "node:process";
+import * as readline from "node:readline/promises";
+import {
+	type CondensedRegistryRepositoryTagSchema,
+	Gitlab,
+	type RegistryRepositorySchema,
+	type RegistryRepositoryTagSchema,
+} from "@gitbeaker/rest";
+
+export const DEFAULT_KEEP_REGEX = ".*";
+export const DEFAULT_DELETE_REGEX = "^$";
+export const DEFAULT_CONCURRENCY = 20;
+
+export const DEFAULT_TAGS_PER_PAGE = 50;
+export const DEFAULT_START_INDEX = 1;
+export const DEFAULT_END_INDEX = 10000;
+export const DEFAULT_OLDER_THAN_DAYS = 90;
+export const DEFAULT_KEEP_MOST_RECENT = 0;
+
+export interface GitLabContainerRepositoryCleanerOptions {
+	dryRun: boolean;
+	concurrency: number;
+	verbose: boolean;
+	gitlabHost: string;
+	gitlabToken: string;
 }
 
+export interface CleanupContainerRepositoryTagsOptions {
+	keepRegex: string;
+	deleteRegex: string;
+	olderThanDays: number;
+	tagsPerPage: number;
+	outputTags: string;
+	keepMostRecentN: number;
+}
 
+export class GitLabContainerRepositoryCleaner {
+	gl: InstanceType<typeof Gitlab<false>>;
 
+	// Max number of promises running in parallel
+	// May be less number of objects to manipulate exceed concurrency
+	concurrency: number;
+
+	// Enable dry run mode
+	// If true, only read operation are performed
+	dryRun: boolean;
+
+	// Enable verbose output
+	verbose: boolean;
+
+	/**
+	 * Create a new GitLabContainerRepositoryCleaner instance,
+	 *
+	 * @param options
+	 */
+	constructor(options: Partial<GitLabContainerRepositoryCleanerOptions> = {}) {
+		this.gl = new Gitlab({
+			token: options.gitlabToken || process.env.GITLAB_TOKEN || "",
+			host: options.gitlabHost || process.env.GITLAB_HOST || "",
+		});
+
+		this.dryRun = options.dryRun ?? false;
+		this.concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+		this.verbose = options.verbose ?? false;
+	}
+
+	/**
+	 * Get Container Repositories in a range of ID. Look for repository for each ID in range concurrently using GitLab API:
+	 * a 404 indicated repository does not exists, otherwise repository data is returned.
+	 * @param startIndex repository ID to start from
+	 * @param endIndex repository ID to end by
+	 * @param outputFile path to write results as JSON
+	 */
+	public async getContainerRepositoriesConcurrently(
+		startIndex = DEFAULT_START_INDEX,
+		endIndex = DEFAULT_END_INDEX,
+		outputFile: string | undefined = undefined,
+	): Promise<RegistryRepositorySchema[]> {
+		if (!outputFile || outputFile === "") {
+			console.log(
+				"You didn't specify an output path to write results. By default results will be shown on stdout.",
+			);
+			console.log(
+				"Output may be long, it's possible your console buffer won't show everything.",
+			);
+			console.log(
+				"This command may run for a long time and some results may be lost.",
+			);
+			console.log(
+				"Use -o flag to specify a file such as -o /tmp/repositories.json",
+			);
+			console.log("");
+
+			if (stdin.isTTY && process.env.NODE_ENV !== "test") {
+				await this.promptUser(
+					"Press CTRL+C to interrupt or ENTER to continue...",
+				);
+			} else {
+				console.log(
+					"Non-interactive environment detected. Continuing without prompt.",
+				);
+			}
+		}
+
+		if (startIndex > endIndex) {
+			throw new Error("Start index is greater than end index");
+		}
+
+		const totalLength = endIndex - startIndex + 1;
+		const repositoryIds = [...Array(totalLength).keys()].map(
+			(i) => i + startIndex,
+		);
+
+		console.log(
+			`🔭 Requesting container repository IDs [${startIndex}-${endIndex}] with concurrency ${this.concurrency}`,
+		);
+
+		const repositories: RegistryRepositorySchema[] = [];
+
+		// Process repos in batches of size this.concurrency
+		let totalFetched = 0;
+		for (let i = 0; i < repositoryIds.length; i += this.concurrency) {
+			const batch = repositoryIds.slice(i, i + this.concurrency);
+			const batchPromises = batch.map((repositoryId) =>
+				this.getContainerRepositories(repositoryId),
+			);
+
+			console.log(`   Fetching ${batch.length} repositories, ${totalFetched}/${totalLength} done`);
+			const batchResults = await Promise.allSettled(batchPromises);
+			totalFetched += batch.length;
+			for (const result of batchResults) {
+				if (result.status === "fulfilled") {
+					repositories.push(result.value);
+				} // we ignore errors for now (invalid IDs)
+			}
+		}
+
+		if (repositories.length === 0) {
+			throw new Error("   No repositories found. Maybe try again with a different ID range?");
+		}
+
+		console.log(`   Found ${repositories.length} repositories`);
+
+		if (outputFile) {
+			console.log(`📝 Writing repository list as JSON to ${outputFile}`);
+			this.writeDataJsonToFile(outputFile, repositories);
+		} else {
+			console.log("");
+			console.log(repositories);
+			console.log("");
+			console.log(
+				"   Repositories have been written to stdout. Use -o to write results as JSON to file.",
+			);
+		}
+
+		return repositories;
+	}
+
+	/**
+	 * Fetch a single Container Repository by ID
+	 */
+	private async getContainerRepositories(repositoryId: number) {
+		return this.gl.ContainerRegistry.showRepository(repositoryId, {
+			tagsCount: true,
+		});
+	}
+
+	public async getProjectContainerRepositories(projectId: string | number) {
+		const repos = await this.gl.ContainerRegistry.allRepositories({
+			projectId: projectId,
+			tagsCount: true,
+		});
+		console.log(repos);
+	}
+
+	public async getGroupContainerRepositories(groupId: string | number) {
+		const repos = await this.gl.ContainerRegistry.allRepositories({
+			groupId: groupId,
+			tagsCount: true,
+		});
+		console.log(repos);
+	}
+
+	/**
+	 * Get all tags of a Project's Container Repository. Uses GitLab API pagination to run concurrent requests across multiple Promises,
+	 * each Promises having a range of pages to fetch.
+	 *
+	 * @param repository
+	 * @param tagsPerPage number of tags per page
+	 * @returns
+	 */
+	private async getRepositoryTagsConcurrently(
+		repository: RegistryRepositorySchema,
+		tagsPerPage = 50,
+	) {
+		const tagCount = repository.tags_count ?? 0;
+		const pageTotal = Math.ceil(tagCount / tagsPerPage);
+		const pages = [...Array(pageTotal).keys()].map((i) => i + 1);
+
+		console.log(
+			`🔭 Listing ${tagCount} tags (${pageTotal} pages, ${tagsPerPage} tags per page)`,
+		);
+
+		const result: CondensedRegistryRepositoryTagSchema[] = [];
+
+		// Process pages in batches of size this.concurrency
+		for (let i = 0; i < pages.length; i += this.concurrency) {
+			const batch = pages.slice(i, i + this.concurrency);
+			const batchPromises = batch.map((page) =>
+				this.getRepositoryTagsForPages(
+					repository.project_id,
+					repository.id,
+					page,
+					tagsPerPage,
+				),
+			);
+
+			const batchResults = await Promise.all(batchPromises);
+			result.push(...batchResults.flat());
+
+			console.log(`   Fetched ${result.length}/${tagCount} tags...`);
+		}
+
+		console.log(`   Found ${result.length} tags`);
+
+		return result;
+	}
+
+	/**
+	 * Fetch Container Repository tags for the given pages.
+	 */
+	private async getRepositoryTagsForPages(
+		projectId: number,
+		repositoryId: number,
+		page: number,
+		perPage: number,
+	) {
+		return await this.gl.ContainerRegistry.allTags(projectId, repositoryId, {
+			page: page,
+			perPage: perPage,
+		});
+	}
+
+	public async cleanupContainerRepositoryTags(
+		repositoryId: number,
+		options: Partial<CleanupContainerRepositoryTagsOptions> = {},
+	) {
+		const {
+			keepRegex = DEFAULT_KEEP_REGEX,
+			deleteRegex = DEFAULT_DELETE_REGEX,
+			olderThanDays = DEFAULT_OLDER_THAN_DAYS,
+			tagsPerPage = DEFAULT_TAGS_PER_PAGE,
+			outputTags = "",
+			keepMostRecentN = DEFAULT_KEEP_MOST_RECENT,
+		} = options;
+		console.log(
+			`🧹 Cleaning image tags for repository ${repositoryId}. Keep tags matching '${keepRegex}' and delete tags older than ${olderThanDays} days. Keeping ${keepMostRecentN} most recent tags. (dry-run: ${this.dryRun})`,
+		);
+
+		// warn user if parameters doesn't make sense or forgot to disable safety
+		if (
+			keepRegex === DEFAULT_KEEP_REGEX ||
+			deleteRegex === DEFAULT_DELETE_REGEX
+		) {
+			console.warn("");
+			console.warn(
+				`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't mach anything for safety reasons.`,
+			);
+			console.warn(
+				`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`,
+			);
+			console.warn(
+				`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`,
+			);
+			console.warn("");
+
+			await this.promptUser("Press ENTER to continue...");
+		}
+
+		// retrieve all tags
+		const repository = await this.gl.ContainerRegistry.showRepository(
+			repositoryId,
+			{
+				tagsCount: true,
+			},
+		);
+		const projectId: number = Number.parseInt(
+			repository.project_id as unknown as string,
+		); // FIXME: GitLab returns a string, wrong type def
+		const allTags = await this.getRepositoryTagsConcurrently(
+			repository,
+			tagsPerPage,
+		);
+
+		// filter out tags matching keep regex
+		console.log("🕸️  Filtering tag names with regex...");
+		const regexFilteredTags = this.filterTagsRegex(
+			allTags,
+			keepRegex,
+			deleteRegex,
+		);
+
+		console.log(
+			`   Found ${regexFilteredTags.length} tags matching '${deleteRegex}' but not matching '${keepRegex}'`,
+		);
+
+		console.log(
+			`👴 Checking tag creation date to filter out tags younger than ${olderThanDays} days`,
+		);
+
+		const deleteTags = await this.filterTagsCreationDate(
+			projectId,
+			repositoryId,
+			regexFilteredTags,
+			olderThanDays,
+			keepMostRecentN,
+		);
+		const deleteTagCount = deleteTags.length;
+
+		console.log(`💀 Found ${deleteTagCount} tags to delete`);
+
+		if (outputTags) {
+			console.log(`📝 Writing tag list to ${outputTags}`);
+			this.writeDataJsonToFile(outputTags, deleteTags);
+		}
+
+		// Delete tags in parallel
+		if (this.dryRun) {
+			console.log(`🔥 [DRY-RUN] Would delete ${deleteTagCount} tags`);
+		} else {
+			console.log(`🔥 Deleting ${deleteTagCount} tags...`);
+		}
+
+		this.deleteTagsConcurrently(projectId, repositoryId, deleteTags);
+
+		if (this.dryRun) {
+			console.log(`✅ [DRY-RUN] Would have deleted ${deleteTagCount} tags`);
+		} else {
+			console.log(`✅ Deleted ${deleteTagCount} tags!`);
+		}
+		console.log("🔄 Done!\n");
+	}
+
+	/**
+	 * Filter tags based on regex. All tags matching regex are kept.
+	 * Return tags to remove.
+	 */
+	private filterTagsRegex(
+		tags: CondensedRegistryRepositoryTagSchema[],
+		keepRegexStr: string,
+		deleteRegexStr: string,
+	) {
+		const keepRegex = new RegExp(keepRegexStr);
+		const deleteRegex = new RegExp(deleteRegexStr);
+
+		let deleteCandidate: CondensedRegistryRepositoryTagSchema[] = [];
+
+		// filter out tags matching keepRegex
+		deleteCandidate = tags.filter((t) => !keepRegex.test(t.name));
+
+		// filter in tags matching removeTagRegex
+		return deleteCandidate.filter((t) => deleteRegex.test(t.name));
+	}
+
+	private async getTagDetailsConcurrently(
+		projectId: number,
+		repositoryId: number,
+		tags: CondensedRegistryRepositoryTagSchema[],
+	) {
+		console.log(`🔭 Fetching tag details for ${tags.length} tags`);
+
+		// Split tags into chunks that we can fetch concurrently
+		const chunkSize = Math.ceil(tags.length / this.concurrency);
+		const chunks = [];
+		for (let i = 0; i < tags.length; i += chunkSize) {
+			chunks.push(tags.slice(i, i + chunkSize));
+		}
+
+		const detailedTagsPromises = chunks.map((chunk) =>
+			this.getTagDetails(projectId, repositoryId, chunk),
+		);
+
+		const results = await Promise.all(detailedTagsPromises);
+		const result = results.flat();
+
+		if (result.length !== tags.length) {
+			console.warn(
+				`⚠️ Fetched tag details for ${result.length} tags, expected ${tags.length}`,
+			);
+		}
+
+		return result;
+	}
+
+	// Update the getTagDetails function to work with chunks
+	private async getTagDetails(
+		projectId: number,
+		repositoryId: number,
+		tagChunk: CondensedRegistryRepositoryTagSchema[],
+	) {
+		const result: RegistryRepositoryTagSchema[] = [];
+
+		for (const t of tagChunk) {
+			// if (result.length % 10 == 0){
+			//     console.log(`   Fetching tag details ${result.length}/${tagChunk.length} in this chunk...`)
+			// }
+
+			try {
+				const tagDetails = await this.gl.ContainerRegistry.showTag(
+					projectId,
+					repositoryId,
+					t.name,
+				);
+				result.push(tagDetails);
+				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+			} catch (e: any) {
+				const status = e?.cause?.response?.status;
+				if (status && status !== 404) {
+					console.error(
+						`Non-404 error listing tag ${t.name} in repository ${repositoryId}`,
+					);
+				} else {
+					console.warn(`Tag ${t.name} not found`);
+				}
+			}
+		}
+
+		return result;
+	}
+
+	private async filterTagsCreationDate(
+		projectId: number,
+		repositoryId: number,
+		tags: CondensedRegistryRepositoryTagSchema[],
+		olderThanDays: number,
+		keepMostRecentN: number,
+	) {
+		const now = new Date();
+
+		const detailedTags = await this.getTagDetailsConcurrently(
+			projectId,
+			repositoryId,
+			tags,
+		);
+
+		// Sort tags by creation date, newest first
+		detailedTags.sort(
+			(a, b) =>
+				new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+		);
+
+		// Keep the most recent N tags
+		const tagsToKeep = detailedTags.slice(0, keepMostRecentN);
+		const tagsToConsiderForDeletion = detailedTags.slice(keepMostRecentN);
+
+		// Check remaining tags for creation date
+		const deleteTags = tagsToConsiderForDeletion.filter((t) => {
+			const createdDate = new Date(t.created_at);
+			const tagAgeDays =
+				(now.getTime() - createdDate.getTime()) / (1000 * 3600 * 24);
+
+			return tagAgeDays > olderThanDays;
+		});
+
+		if (this.verbose) {
+			console.log("\nTags to be deleted:");
+			for (const tag of deleteTags) {
+				console.log(`  - ${tag.name} (${tag.created_at})`);
+			}
+			console.log("\n Tags to be kept:");
+			for (const tag of tagsToKeep) {
+				console.log(`  - ${tag.name} (${tag.created_at})`);
+			}
+			console.log("");
+		}
+
+		console.log(`ℹ️  Kept ${tagsToKeep.length} most recent tags`);
+		console.log(`ℹ️  Filtered ${deleteTags.length} tags to delete based on age`);
+		return deleteTags;
+	}
+
+	private async deleteTagsConcurrently(
+		projectId: number,
+		repositoryId: number,
+		tags: RegistryRepositoryTagSchema[],
+	) {
+		const chunkSize = Math.ceil(tags.length / this.concurrency);
+		const chunks = [];
+		for (let i = 0; i < tags.length; i += chunkSize) {
+			chunks.push(tags.slice(i, i + chunkSize));
+		}
+
+		const deleteTagsPromises = chunks.map((chunk) =>
+			this.deleteTags(projectId, repositoryId, chunk),
+		);
+
+		await Promise.all(deleteTagsPromises);
+	}
+
+	private async deleteTags(
+		projectId: number,
+		repositoryId: number,
+		tags: RegistryRepositoryTagSchema[],
+	) {
+		for (const tag of tags) {
+			if (this.dryRun) {
+				console.log(`[DRY-RUN] Would delete tag ${tag.name}`);
+			} else {
+				await this.gl.ContainerRegistry.removeTag(
+					projectId,
+					repositoryId,
+					tag.name,
+				);
+			}
+		}
+	}
+
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	private writeDataJsonToFile(outputTagsToFile: string, data: any) {
+		fs.writeFileSync(outputTagsToFile, JSON.stringify(data, undefined, "  "));
+	}
+
+	private async promptUser(msg: string): Promise<string> {
+		const rl = readline.createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		const answer = await rl.question(msg);
+		rl.close();
+		return answer;
+	}
+}

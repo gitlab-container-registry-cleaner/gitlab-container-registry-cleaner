@@ -1,14 +1,38 @@
 {
+  "name": "gitlab-container-registry-cleaner",
+  "description": "A CLI tool to clean up the GitLab Container Registry",
+  "author": "gitlab-container-registry-cleaner",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/gitlab-container-registry-cleaner/gitlab-container-registry-cleaner",
+  "repository": "https://github.com/gitlab-container-registry-cleaner/gitlab-container-registry-cleaner",
+  "version": "0.0.1",
+  "type": "module",
+  "types": "./dist/main.d.ts",
   "devDependencies": {
-    "typescript": "^5.1.6"
+    "@biomejs/biome": "^1.9.0",
+    "@mswjs/interceptors": "^0.35.2",
+    "@types/inquirer": "^9.0.7",
+    "msw": "^2.4.5",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.0"
   },
+  "engines": {
+    "node": ">=18.20.0"
+  },
+  "exports": "./dist/main.js",
   "dependencies": {
-    "@gitbeaker/cli": "^39.10.2",
-    "@gitbeaker/rest": "^39.10.2",
-    "@types/node": "^20.4.5",
-    "commander": "^11.0.0"
-  }, 
+    "@gitbeaker/cli": "^40.2.0",
+    "@gitbeaker/rest": "^40.2.0",
+    "@types/node": "^22.5.4",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "inquirer": "^10.2.2",
+    "tsx": "^4.19.1"
+  },
   "scripts": {
-    "build": "tsc"
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
+    "test": "vitest",
+    "dev": "tsx src/main.ts"
   }
 }

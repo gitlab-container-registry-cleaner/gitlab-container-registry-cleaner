@@ -1,0 +1,24 @@
+{
+	"$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
+	"organizeImports": {
+		"enabled": true,
+		"include": ["src/**/*.ts", "test/**/*.ts"]
+	},
+	"formatter": {
+		"enabled": true,
+		"include": ["src/**/*.ts", "test/**/*.ts"]
+	},
+	"linter": {
+		"enabled": true,
+		"include": ["src/**/*.ts", "test/**/*.ts"],
+		"rules": {
+			"recommended": true,
+			"style": {
+				"noUselessElse": "off"
+			},
+			"suspicious": {
+				"noDuplicateTestHooks": "off"
+			}
+		}
+	}
+}
