@@ -12,6 +12,7 @@
     "@biomejs/biome": "^1.9.0",
     "@mswjs/interceptors": "^0.35.2",
     "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.5.4",
     "auto-changelog": "^2.5.0",
     "msw": "^2.4.5",
     "np": "^10.0.7",
@@ -32,7 +33,6 @@
   "dependencies": {
     "@gitbeaker/cli": "^40.2.0",
     "@gitbeaker/rest": "^40.2.0",
-    "@types/node": "^22.5.4",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "inquirer": "^10.2.2",
