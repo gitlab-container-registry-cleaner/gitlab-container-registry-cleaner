@@ -272,7 +272,6 @@ describe("Cleaner", () => {
 
 		const notExpectedTags = [
 			FAKE_TAGS[1]?.[4],
-
 		] as RegistryRepositoryTagSchema[];
 
 		checkExpectedAndNotExpectedTags(
