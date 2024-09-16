@@ -126,7 +126,9 @@ export class GitLabContainerRepositoryCleaner {
 				this.getContainerRepositories(repositoryId),
 			);
 
-			console.log(`   Fetching ${batch.length} repositories, ${totalFetched}/${totalLength} done`);
+			console.log(
+				`   Fetching ${batch.length} repositories, ${totalFetched}/${totalLength} done`,
+			);
 			const batchResults = await Promise.allSettled(batchPromises);
 			totalFetched += batch.length;
 			for (const result of batchResults) {
@@ -137,7 +139,9 @@ export class GitLabContainerRepositoryCleaner {
 		}
 
 		if (repositories.length === 0) {
-			throw new Error("   No repositories found. Maybe try again with a different ID range?");
+			throw new Error(
+				"   No repositories found. Maybe try again with a different ID range?",
+			);
 		}
 
 		console.log(`   Found ${repositories.length} repositories`);
