@@ -17,6 +17,7 @@
     "msw": "^2.4.5",
     "np": "^10.0.7",
     "typescript": "^5.6.2",
+    "tsx": "^4.19.1",
     "vitest": "^2.1.0"
   },
   "engines": {
@@ -35,8 +36,7 @@
     "@gitbeaker/rest": "^40.2.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
-    "inquirer": "^10.2.2",
-    "tsx": "^4.19.1"
+    "inquirer": "^10.2.2"
   },
   "auto-changelog": {
     "output": "CHANGELOG.md",
@@ -52,6 +52,6 @@
     "test": "vitest",
     "dev": "tsx src/main.ts",
     "version": "npx auto-changelog -p && git add CHANGELOG.md",
-    "release": "yarn build &&np"
+    "release": "yarn build && np"
   }
 }
