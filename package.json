@@ -23,6 +23,9 @@
   "engines": {
     "node": ">=18.20.0"
   },
+  "bin": {
+    "gitlab-container-registry-cleaner": "./dist/main.js"
+  },
   "exports": "./dist/main.js",
   "files": [
     "dist",
