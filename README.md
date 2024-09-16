@@ -6,6 +6,8 @@ Contents:
 
 - [What this is?](#what-this-is)
 - [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
 - [Usage](#usage)
   - [List Container Repositories for entire instance, groups or projects](#list-container-repositories-for-entire-instance-groups-or-projects)
   - [Cleanup Container Repositories](#cleanup-container-repositories)
@@ -31,6 +33,25 @@ This tool helps you clean up the GitLab Container Registry by deleting tags that
 - Node 18+
 - GitLab token with `api` scope
 
+## Installation
+
+Just run:
+
+```
+npx @gitlab-container-registry-cleaner/gitlab-container-registry-cleaner
+```
+
+Alternatively, you can also clone this repository and run:
+
+```sh
+npm i -g yarn
+yarn
+yarn build
+./gitlab-container-registry-cleaner
+```
+
+## Configuration
+
 Export environment variables to specify your GitLab server and token:
 
 ```sh
@@ -47,14 +68,13 @@ GITLAB_TOKEN="xxx"
 
 ## Usage
 
-Clone this repository and run:
+We provide a wrapper around the CLI that makes it easier to use. You can run:
 
 ```sh
-npm i -g yarn
-yarn
-yarn build
-./gitlab-container-registry-cleaner --help
+./gitlab-container-registry-cleaner
 ```
+
+See below for more details on the commands.
 
 ### List Container Repositories for entire instance, groups or projects
 
@@ -195,6 +215,8 @@ Run `yarn install` to install dependencies.
 Run `yarn dev -- <command>` to start the dev version of the CLI with a given command.
 
 Run `yarn build` to build the project into `dist`.
+
+To release, run `yarn release`.
 
 ## Testing
 
