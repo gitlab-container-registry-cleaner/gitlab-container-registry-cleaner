@@ -22,6 +22,13 @@
     "node": ">=18.20.0"
   },
   "exports": "./dist/main.js",
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE.txt",
+    "README.md",
+    "gitlab-container-registry-cleaner"
+  ],
   "dependencies": {
     "@gitbeaker/cli": "^40.2.0",
     "@gitbeaker/rest": "^40.2.0",
@@ -36,9 +43,6 @@
     "template": "keepachangelog",
     "commitLimit": false
   },
-  "np": {
-
-  },
   "publishConfig": {
     "access": "public"
   },
@@ -47,6 +51,7 @@
     "build": "npm run clean && tsc",
     "test": "vitest",
     "dev": "tsx src/main.ts",
-    "version": "npx auto-changelog -p && git add CHANGELOG.md"
+    "version": "npx auto-changelog -p && git add CHANGELOG.md",
+    "release": "yarn build &&np"
   }
 }
