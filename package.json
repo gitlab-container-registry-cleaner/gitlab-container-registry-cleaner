@@ -24,7 +24,7 @@
     "node": ">=18.20.0"
   },
   "bin": {
-    "gitlab-container-registry-cleaner": "./dist/main.js"
+    "gitlab-container-registry-cleaner": "./gitlab-container-registry-cleaner"
   },
   "exports": "./dist/main.js",
   "files": [
