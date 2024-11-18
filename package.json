@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "homepage": "https://github.com/gitlab-container-registry-cleaner/gitlab-container-registry-cleaner",
   "repository": "https://github.com/gitlab-container-registry-cleaner/gitlab-container-registry-cleaner",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "types": "./dist/main.d.ts",
   "devDependencies": {
