@@ -170,20 +170,36 @@ export class GitLabContainerRepositoryCleaner {
 		});
 	}
 
-	public async getProjectContainerRepositories(projectId: string | number) {
+	public async getProjectContainerRepositories(projectId: string | number, outputFile?: string) {
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			projectId: projectId,
 			tagsCount: true,
 		});
-		console.log(repos);
+
+		if (outputFile) {
+			console.log(`📝 Writing repository list as JSON to ${outputFile}`);
+			this.writeDataJsonToFile(outputFile, repos);
+		} else {
+			console.log(repos);
+		}
+
+		return repos;
 	}
 
-	public async getGroupContainerRepositories(groupId: string | number) {
+	public async getGroupContainerRepositories(groupId: string | number, outputFile?: string) {
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			groupId: groupId,
 			tagsCount: true,
 		});
-		console.log(repos);
+
+		if (outputFile) {
+			console.log(`📝 Writing repository list as JSON to ${outputFile}`);
+			this.writeDataJsonToFile(outputFile, repos);
+		} else {
+			console.log(repos);
+		}
+
+		return repos;
 	}
 
 	/**
@@ -522,7 +538,8 @@ export class GitLabContainerRepositoryCleaner {
 
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 	private writeDataJsonToFile(outputTagsToFile: string, data: any) {
-		fs.writeFileSync(outputTagsToFile, JSON.stringify(data, undefined, "  "));
+		const jsonString = JSON.stringify(data, undefined, "  ");
+		fs.writeFileSync(outputTagsToFile, jsonString);
 	}
 
 	private async promptUser(msg: string): Promise<string> {

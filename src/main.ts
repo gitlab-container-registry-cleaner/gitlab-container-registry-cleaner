@@ -73,6 +73,10 @@ async function main() {
 		.argument(
 			"<project-id>",
 			"Project ID or path such as '42' or full project path 'group/subgroup/project-name'",
+		)
+		.option(
+			"-o, --output <file>",
+			"Output repositories list as JSON to file. By default will print to stdout.",
 		);
 
 	listCmd
@@ -82,6 +86,10 @@ async function main() {
 		.argument(
 			"<group-id>",
 			"Group ID or path such as '42' or full group or subgroup path 'group/subgroup'",
+		)
+		.option(
+			"-o, --output <file>",
+			"Output repositories list as JSON to file. By default will print to stdout.",
 		);
 
 	// clean
@@ -267,20 +275,20 @@ async function actionCleanRepository(
 	}
 }
 
-async function actionListProjectRepositories(projectId: string | number) {
+async function actionListProjectRepositories(projectId: string | number, opts: { output?: string }) {
 	const cleaner = new GitLabContainerRepositoryCleaner({
 		dryRun: true,
 		concurrency: 1,
 	});
-	await cleaner.getProjectContainerRepositories(projectId);
+	await cleaner.getProjectContainerRepositories(projectId, opts.output);
 }
 
-async function actionListGroupRepositories(groupId: string | number) {
+async function actionListGroupRepositories(groupId: string | number, opts: { output?: string }) {
 	const cleaner = new GitLabContainerRepositoryCleaner({
 		dryRun: true,
 		concurrency: 1,
 	});
-	await cleaner.getGroupContainerRepositories(groupId);
+	await cleaner.getGroupContainerRepositories(groupId, opts.output);
 }
 
 function checkEnvironment() {
