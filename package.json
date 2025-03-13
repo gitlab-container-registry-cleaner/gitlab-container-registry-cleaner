@@ -23,10 +23,10 @@
   "engines": {
     "node": ">=18.20.0"
   },
-  "bin": {
-    "gitlab-container-registry-cleaner": "./gitlab-container-registry-cleaner"
+  "bin": "./gitlab-container-registry-cleaner",
+  "exports": {
+    ".": "./dist/main.js"
   },
-  "exports": "./dist/main.js",
   "files": [
     "dist",
     "CHANGELOG.md",
