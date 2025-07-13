@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RegistryRepositorySchema } from "@gitbeaker/rest";
-import { Separator, checkbox } from "@inquirer/prompts";
+import { checkbox, Separator } from "@inquirer/prompts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, "../package.json");
@@ -275,7 +275,10 @@ async function actionCleanRepository(
 	}
 }
 
-async function actionListProjectRepositories(projectId: string | number, opts: { output?: string }) {
+async function actionListProjectRepositories(
+	projectId: string | number,
+	opts: { output?: string },
+) {
 	const cleaner = new GitLabContainerRepositoryCleaner({
 		dryRun: true,
 		concurrency: 1,
@@ -283,7 +286,10 @@ async function actionListProjectRepositories(projectId: string | number, opts: {
 	await cleaner.getProjectContainerRepositories(projectId, opts.output);
 }
 
-async function actionListGroupRepositories(groupId: string | number, opts: { output?: string }) {
+async function actionListGroupRepositories(
+	groupId: string | number,
+	opts: { output?: string },
+) {
 	const cleaner = new GitLabContainerRepositoryCleaner({
 		dryRun: true,
 		concurrency: 1,

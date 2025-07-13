@@ -170,7 +170,10 @@ export class GitLabContainerRepositoryCleaner {
 		});
 	}
 
-	public async getProjectContainerRepositories(projectId: string | number, outputFile?: string) {
+	public async getProjectContainerRepositories(
+		projectId: string | number,
+		outputFile?: string,
+	) {
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			projectId: projectId,
 			tagsCount: true,
@@ -186,7 +189,10 @@ export class GitLabContainerRepositoryCleaner {
 		return repos;
 	}
 
-	public async getGroupContainerRepositories(groupId: string | number, outputFile?: string) {
+	public async getGroupContainerRepositories(
+		groupId: string | number,
+		outputFile?: string,
+	) {
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			groupId: groupId,
 			tagsCount: true,

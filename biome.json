@@ -1,16 +1,13 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.8.3/schema.json",
-	"organizeImports": {
-		"enabled": true,
-		"include": ["src/**/*.ts", "test/**/*.ts"]
-	},
+	"$schema": "https://biomejs.dev/schemas/2.1.1/schema.json",
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"formatter": {
 		"enabled": true,
-		"include": ["src/**/*.ts", "test/**/*.ts"]
+		"includes": ["**/src/**/*.ts", "**/test/**/*.ts"]
 	},
 	"linter": {
 		"enabled": true,
-		"include": ["src/**/*.ts", "test/**/*.ts"],
+		"includes": ["**/src/**/*.ts", "**/test/**/*.ts"],
 		"rules": {
 			"recommended": true,
 			"style": {
