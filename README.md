@@ -30,7 +30,7 @@ This tool helps you clean up the GitLab Container Registry by deleting tags that
 
 ## Requirements
 
-- Node 18+
+- Node 20+
 - GitLab token with `api` scope
 
 ## Installation
