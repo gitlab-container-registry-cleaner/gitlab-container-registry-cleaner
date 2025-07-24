@@ -134,3 +134,6 @@ dist
 
 # Build output
 dist/
+
+# repositories, in case of testing locally
+repositories.json
