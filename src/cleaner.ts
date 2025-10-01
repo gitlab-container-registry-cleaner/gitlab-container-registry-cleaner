@@ -280,8 +280,17 @@ export class GitLabContainerRepositoryCleaner {
 			outputTags = "",
 			keepMostRecentN = DEFAULT_KEEP_MOST_RECENT,
 		} = options;
+
+		// retrieve repository details first
+		const repository = await this.gl.ContainerRegistry.showRepository(
+			repositoryId,
+			{
+				tagsCount: true,
+			},
+		);
+
 		console.log(
-			`🧹 Cleaning image tags for repository ${repositoryId}. Keep tags matching '${keepRegex}' and delete tags older than ${olderThanDays} days. Keeping ${keepMostRecentN} most recent tags. (dry-run: ${this.dryRun})`,
+			`🧹 Cleaning image tags for repository ${repository.path} (ID: ${repositoryId}). Keep tags matching '${keepRegex}' and delete tags older than ${olderThanDays} days. Keeping ${keepMostRecentN} most recent tags. (dry-run: ${this.dryRun})`,
 		);
 
 		// warn user if parameters doesn't make sense or forgot to disable safety
@@ -305,12 +314,6 @@ export class GitLabContainerRepositoryCleaner {
 		}
 
 		// retrieve all tags
-		const repository = await this.gl.ContainerRegistry.showRepository(
-			repositoryId,
-			{
-				tagsCount: true,
-			},
-		);
 		const projectId: number = Number.parseInt(
 			repository.project_id as unknown as string,
 		); // FIXME: GitLab returns a string, wrong type def
