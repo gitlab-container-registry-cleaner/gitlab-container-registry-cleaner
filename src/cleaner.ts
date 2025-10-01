@@ -460,7 +460,6 @@ export class GitLabContainerRepositoryCleaner {
 		return result;
 	}
 
-
 	/**
 	 * Sort tags by semantic version (newest first)
 	 * Extracts version from tag name and compares using semver
