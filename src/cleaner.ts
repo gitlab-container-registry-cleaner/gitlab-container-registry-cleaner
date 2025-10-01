@@ -316,6 +316,7 @@ export class GitLabContainerRepositoryCleaner {
 		// retrieve all tags
 		const projectId: number = Number.parseInt(
 			repository.project_id as unknown as string,
+			10,
 		); // FIXME: GitLab returns a string, wrong type def
 		const allTags = await this.getRepositoryTagsConcurrently(
 			repository,
