@@ -71,6 +71,16 @@ describe("Cleaner", () => {
 			_fakeTag("release-1.1.0", 3, "2024-03-01T00:00:00Z"),
 			_fakeTag("dev-build-456", 3, "2024-04-01T00:00:00Z"),
 		],
+		4: [
+			// Repository with OCI manifests that return 404 on detail fetch
+			_fakeTag("foo-v1.34.2", 4, "2024-01-01T00:00:00Z"),
+			_fakeTag("foo-v1.35.0", 4, "2024-01-15T00:00:00Z"),
+			_fakeTag("foo-v1.37.3", 4, "2024-02-01T00:00:00Z"),
+			_fakeTag("foo-v1.39.2", 4, "2024-03-01T00:00:00Z"),
+			_fakeTag("foo-v1.40.1", 4, "2024-04-01T00:00:00Z"),
+			_fakeTag("foo-v1.41.0", 4, "2024-05-01T00:00:00Z"),
+			_fakeTag("foo-latest", 4, "2024-05-15T00:00:00Z"),
+		],
 	} as const;
 
 	beforeAll(() => {
@@ -139,6 +149,12 @@ describe("Cleaner", () => {
 			({ params }) => {
 				const projectId = Number(params.projectId);
 				const tagName = params.tagName as string;
+
+				// Simulate OCI manifest issue for repository 4 - always return 404
+				if (projectId === 4) {
+					return new HttpResponse(null, { status: 404 });
+				}
+
 				const tag = FAKE_TAGS[projectId]?.find((t) => t.name === tagName);
 				if (tag) {
 					return HttpResponse.json(tag);
@@ -386,5 +402,98 @@ describe("Cleaner", () => {
 			expectedTags,
 			notExpectedTags,
 		);
+	});
+
+	describe("Semver fallback (OCI manifest issue)", () => {
+		it("should fallback to semver sorting when tag details return 404", async () => {
+			// @ts-expect-error Private method
+			const spy = vi.spyOn(cleaner, "deleteTagsConcurrently");
+
+			await cleaner.cleanupContainerRepositoryTags(4, {
+				keepMostRecentN: 3,
+				olderThanDays: 90,
+				keepRegex: "^$",
+				deleteRegex: ".*",
+			});
+
+			expect(spy).toHaveBeenCalledTimes(1);
+			const [projectId, repositoryId, tagsToDelete] = spy.mock.calls[0];
+
+			expect(projectId).toBe(4);
+			expect(repositoryId).toBe(4);
+			expect(tagsToDelete).toHaveLength(4); // 7 total - 3 kept = 4 deleted
+
+			// Should keep the 3 newest semver tags: v1.41.0, v1.40.1, v1.39.2
+			// Should delete: v1.37.3, v1.35.0, v1.34.2, foo-latest
+			const deletedTagNames = tagsToDelete.map((t) => t.name);
+			expect(deletedTagNames).toContain("foo-v1.34.2");
+			expect(deletedTagNames).toContain("foo-v1.35.0");
+			expect(deletedTagNames).toContain("foo-v1.37.3");
+			expect(deletedTagNames).toContain("foo-latest");
+
+			expect(deletedTagNames).not.toContain("foo-v1.41.0");
+			expect(deletedTagNames).not.toContain("foo-v1.40.1");
+			expect(deletedTagNames).not.toContain("foo-v1.39.2");
+		});
+
+		it("should handle semver fallback with regex filtering", async () => {
+			// @ts-expect-error Private method
+			const spy = vi.spyOn(cleaner, "deleteTagsConcurrently");
+
+			await cleaner.cleanupContainerRepositoryTags(4, {
+				keepMostRecentN: 2,
+				olderThanDays: 0,
+				keepRegex: "^$", // Don't keep anything by pattern
+				deleteRegex: "foo-v.*", // Only delete tags starting with "foo-v"
+			});
+
+			expect(spy).toHaveBeenCalledTimes(1);
+			const [projectId, repositoryId, tagsToDelete] = spy.mock.calls[0];
+
+			expect(projectId).toBe(4);
+			expect(repositoryId).toBe(4);
+
+			// Should keep 2 newest semver tags: v1.41.0, v1.40.1
+			// Should delete: v1.39.2, v1.37.3, v1.35.0, v1.34.2
+			// foo-latest doesn't match the delete regex so won't be deleted
+			expect(tagsToDelete).toHaveLength(4);
+			const deletedTagNames = tagsToDelete.map((t) => t.name);
+			expect(deletedTagNames).toContain("foo-v1.39.2");
+			expect(deletedTagNames).toContain("foo-v1.37.3");
+			expect(deletedTagNames).toContain("foo-v1.35.0");
+			expect(deletedTagNames).toContain("foo-v1.34.2");
+
+			expect(deletedTagNames).not.toContain("foo-v1.41.0");
+			expect(deletedTagNames).not.toContain("foo-v1.40.1");
+			expect(deletedTagNames).not.toContain("foo-latest");
+		});
+
+		it("should delete all tags when semver fallback with keepMostRecentN=0", async () => {
+			// @ts-expect-error Private method
+			const spy = vi.spyOn(cleaner, "deleteTagsConcurrently");
+
+			await cleaner.cleanupContainerRepositoryTags(4, {
+				keepMostRecentN: 0,
+				olderThanDays: 0,
+				keepRegex: "^$",
+				deleteRegex: ".*",
+			});
+
+			expect(spy).toHaveBeenCalledTimes(1);
+			const [projectId, repositoryId, tagsToDelete] = spy.mock.calls[0];
+
+			expect(projectId).toBe(4);
+			expect(repositoryId).toBe(4);
+			expect(tagsToDelete).toHaveLength(7); // All tags
+
+			const deletedTagNames = tagsToDelete.map((t) => t.name);
+			expect(deletedTagNames).toContain("foo-v1.34.2");
+			expect(deletedTagNames).toContain("foo-v1.35.0");
+			expect(deletedTagNames).toContain("foo-v1.37.3");
+			expect(deletedTagNames).toContain("foo-v1.39.2");
+			expect(deletedTagNames).toContain("foo-v1.40.1");
+			expect(deletedTagNames).toContain("foo-v1.41.0");
+			expect(deletedTagNames).toContain("foo-latest");
+		});
 	});
 });
