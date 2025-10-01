@@ -38,7 +38,7 @@ This tool helps you clean up the GitLab Container Registry by deleting tags that
 Just run:
 
 ```
-npx @gitlab-container-registry-cleaner/gitlab-container-registry-cleaner
+npx gitlab-container-registry-cleaner
 ```
 
 Alternatively, you can also clone this repository and run:
