@@ -306,7 +306,7 @@ export class GitLabContainerRepositoryCleaner {
 				`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`,
 			);
 			console.warn(
-				`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[\-\.][0-9]+[\-\.][0-9]+.*' -d '.*'`,
+				`   Example to keep release tags and delete everything else: -k 'v?[0-9]+[-.][0-9]+[-.][0-9]+.*' -d '.*'`,
 			);
 			console.warn("");
 

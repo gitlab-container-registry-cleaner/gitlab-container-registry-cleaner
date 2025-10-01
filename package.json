@@ -9,15 +9,15 @@
   "type": "module",
   "types": "./dist/main.d.ts",
   "devDependencies": {
-    "@biomejs/biome": "^2.1.1",
-    "@mswjs/interceptors": "^0.39.2",
-    "@types/inquirer": "^9.0.8",
-    "@types/node": "^24.0.13",
+    "@biomejs/biome": "^2.2.4",
+    "@mswjs/interceptors": "^0.39.7",
+    "@types/inquirer": "^9.0.9",
+    "@types/node": "^24.6.1",
     "auto-changelog": "^2.5.0",
-    "msw": "^2.10.4",
+    "msw": "^2.11.3",
     "np": "^10.2.0",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   },
   "engines": {
@@ -35,11 +35,11 @@
     "gitlab-container-registry-cleaner"
   ],
   "dependencies": {
-    "@gitbeaker/cli": "^43.0.0",
-    "@gitbeaker/rest": "^43.0.0",
-    "commander": "^14.0.0",
-    "dotenv": "^17.2.0",
-    "inquirer": "^12.7.0"
+    "@gitbeaker/cli": "^43.5.0",
+    "@gitbeaker/rest": "^43.5.0",
+    "commander": "^14.0.1",
+    "dotenv": "^17.2.3",
+    "inquirer": "^12.9.6"
   },
   "auto-changelog": {
     "output": "CHANGELOG.md",
