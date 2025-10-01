@@ -819,6 +819,11 @@
   resolved "https://registry.npmjs.org/@types/normalize-package-data/-/normalize-package-data-2.4.4.tgz#56e2cc26c397c038fab0e3a917a12d5c5909e901"
   integrity sha512-37i+OaWTh9qeK4LSHPsyRC7NahnGotNuZvjLSgcPzblpHB3rrCJxAOgI5gCdKm7coonsaX1Of0ILiTcnZjbfxA==
 
+"@types/semver@^7.7.1":
+  version "7.7.1"
+  resolved "https://registry.yarnpkg.com/@types/semver/-/semver-7.7.1.tgz#3ce3af1a5524ef327d2da9e4fd8b6d95c8d70528"
+  integrity sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==
+
 "@types/statuses@^2.0.4":
   version "2.0.6"
   resolved "https://registry.npmjs.org/@types/statuses/-/statuses-2.0.6.tgz#66748315cc9a96d63403baa8671b2c124f8633aa"
@@ -2837,9 +2842,9 @@ scoped-regex@^3.0.0:
   resolved "https://registry.npmjs.org/scoped-regex/-/scoped-regex-3.0.0.tgz#cd7ede7d942f2ae90da53272102ff2d73129c46f"
   integrity sha512-yEsN6TuxZhZ1Tl9iB81frTNS292m0I/IG7+w8lTvfcJQP2x3vnpOoevjBoE3Np5A6KnZM2+RtVenihj9t6NiYg==
 
-semver@^7.3.5, semver@^7.6.0, semver@^7.6.3:
+semver@^7.3.5, semver@^7.6.0, semver@^7.6.3, semver@^7.7.2:
   version "7.7.2"
-  resolved "https://registry.npmjs.org/semver/-/semver-7.7.2.tgz#67d99fdcd35cec21e6f8b87a7fd515a33f982b58"
+  resolved "https://registry.yarnpkg.com/semver/-/semver-7.7.2.tgz#67d99fdcd35cec21e6f8b87a7fd515a33f982b58"
   integrity sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA==
 
 shebang-command@^2.0.0:

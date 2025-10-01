@@ -13,6 +13,7 @@
     "@mswjs/interceptors": "^0.39.7",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^24.6.1",
+    "@types/semver": "^7.7.1",
     "auto-changelog": "^2.5.0",
     "msw": "^2.11.3",
     "np": "^10.2.0",
@@ -39,7 +40,8 @@
     "@gitbeaker/rest": "^43.5.0",
     "commander": "^14.0.1",
     "dotenv": "^17.2.3",
-    "inquirer": "^12.9.6"
+    "inquirer": "^12.9.6",
+    "semver": "^7.7.2"
   },
   "auto-changelog": {
     "output": "CHANGELOG.md",

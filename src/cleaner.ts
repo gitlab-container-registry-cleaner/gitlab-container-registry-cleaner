@@ -7,6 +7,7 @@ import {
 	type RegistryRepositorySchema,
 	type RegistryRepositoryTagSchema,
 } from "@gitbeaker/rest";
+import semver from "semver";
 
 export const DEFAULT_KEEP_REGEX = ".*";
 export const DEFAULT_DELETE_REGEX = "^$";
@@ -443,7 +444,7 @@ export class GitLabContainerRepositoryCleaner {
 					t.name,
 				);
 				result.push(tagDetails);
-				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+				// biome-ignore lint/suspicious/noExplicitAny: error handling
 			} catch (e: any) {
 				const status = e?.cause?.response?.status;
 				if (status && status !== 404) {
@@ -451,12 +452,40 @@ export class GitLabContainerRepositoryCleaner {
 						`Non-404 error listing tag ${t.name} in repository ${repositoryId}`,
 					);
 				} else {
-					console.warn(`Tag ${t.name} not found`);
+					console.warn(`Tag ${t.name} not found via GitLab API`);
 				}
 			}
 		}
 
 		return result;
+	}
+
+
+	/**
+	 * Sort tags by semantic version (newest first)
+	 * Extracts version from tag name and compares using semver
+	 */
+	private sortBySemver(
+		tags: RegistryRepositoryTagSchema[],
+	): RegistryRepositoryTagSchema[] {
+		return [...tags].sort((a, b) => {
+			// Try to coerce tag names to valid semver versions
+			// This handles formats like "v1.2.3", "foo-v1.2.3", "1.2.3", etc.
+			const versionA = semver.coerce(a.name);
+			const versionB = semver.coerce(b.name);
+
+			// If both have valid semver versions, compare them (newest first)
+			if (versionA && versionB) {
+				return semver.rcompare(versionA, versionB); // rcompare = reverse compare (newest first)
+			}
+
+			// If only one has a version, prioritize it
+			if (versionA) return -1;
+			if (versionB) return 1;
+
+			// Fall back to alphabetical sorting (newest first)
+			return b.name.localeCompare(a.name);
+		});
 	}
 
 	private async filterTagsCreationDate(
@@ -473,6 +502,61 @@ export class GitLabContainerRepositoryCleaner {
 			repositoryId,
 			tags,
 		);
+
+		if (detailedTags.length === 0 && tags.length > 0) {
+			console.warn("");
+			console.warn(
+				"⚠️  GitLab API failed to fetch tag details (known issue with OCI manifests)",
+			);
+			console.warn(
+				"   https://gitlab.com/gitlab-org/gitlab/-/issues/388865#note_1552979298",
+			);
+			console.warn("");
+
+			// Convert to expected format
+			const fallbackTags = tags.map((t) => ({
+				name: t.name,
+				path: t.path,
+				location: t.location,
+				created_at: new Date().toISOString(), // Dummy date
+			})) as RegistryRepositoryTagSchema[];
+
+			// If older-than-days is requested, we can't apply it
+			if (olderThanDays > 0) {
+				console.warn(
+					`   Cannot apply --older-than-days=${olderThanDays} without creation dates.`,
+				);
+				console.warn("   Age-based filtering will be skipped.");
+			}
+
+			// Try to sort by semver for keep-most-recent
+			if (keepMostRecentN > 0) {
+				console.warn(
+					`   Attempting to keep ${keepMostRecentN} most recent tags using semantic versioning...`,
+				);
+
+				// Sort by semver (newest first)
+				const sorted = this.sortBySemver(fallbackTags);
+
+				// Keep the most recent N tags
+				const tagsToKeep = sorted.slice(0, keepMostRecentN);
+				const tagsToDelete = sorted.slice(keepMostRecentN);
+
+				console.warn(
+					`   Keeping ${tagsToKeep.length} tags based on semver sorting.`,
+				);
+				console.warn("");
+
+				return tagsToDelete;
+			}
+
+			console.warn(
+				"   Proceeding with regex-only filtering (all matching tags will be deleted).",
+			);
+			console.warn("");
+
+			return fallbackTags;
+		}
 
 		// Sort tags by creation date, newest first
 		detailedTags.sort(
@@ -546,8 +630,7 @@ export class GitLabContainerRepositoryCleaner {
 		}
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-	private writeDataJsonToFile(outputTagsToFile: string, data: any) {
+	private writeDataJsonToFile(outputTagsToFile: string, data: unknown) {
 		const jsonString = JSON.stringify(data, undefined, "  ");
 		fs.writeFileSync(outputTagsToFile, jsonString);
 	}
