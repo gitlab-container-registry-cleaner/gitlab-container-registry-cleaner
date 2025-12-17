@@ -202,7 +202,7 @@ Keep the most recent 5 tags and delete everything older than 30 days:
 Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.gitlab.com/ee/user/packages/container_registry/reduce_container_registry_storage.html#how-the-cleanup-policy-works). Cleaner calls GitLab REST API concurrently such as:
 
 - List all tags in repository with [_List registry repository tags_](https://docs.gitlab.com/ee/api/container_registry.html#list-registry-repository-tags)
-- Filter out tags not matching keep regex, filter in tags matching delete regex
+- Filter out tags matching keep regex, filter in tags matching delete regex
 - Get tag details with [_Get details of a registry repository tag_](https://docs.gitlab.com/ee/api/container_registry.html#get-details-of-a-registry-repository-tag) as List registry repository tags only provide tag name, not creation date
 - Filter in tags older than specified number of days
 - Keep the most recent N tags if specified
