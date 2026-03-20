@@ -8,6 +8,7 @@ import {
 	type RegistryRepositoryTagSchema,
 } from "@gitbeaker/rest";
 import semver from "semver";
+import { ProgressBar } from "./progress.js";
 
 export const DEFAULT_KEEP_REGEX = ".*";
 export const DEFAULT_DELETE_REGEX = "^$";
@@ -34,6 +35,10 @@ export interface CleanupContainerRepositoryTagsOptions {
 	tagsPerPage: number;
 	outputTags: string;
 	keepMostRecentN: number;
+	/** Optional callback to confirm deletion. Receives the list of tags to delete. Return true to proceed. */
+	confirmDelete?: (
+		tags: RegistryRepositoryTagSchema[],
+	) => Promise<boolean>;
 }
 
 export class GitLabContainerRepositoryCleaner {
@@ -66,6 +71,36 @@ export class GitLabContainerRepositoryCleaner {
 		this.verbose = options.verbose ?? false;
 	}
 
+	private authVerified = false;
+
+	/**
+	 * Verify that the GitLab token is valid by making a lightweight API call.
+	 * Throws a descriptive error if authentication fails.
+	 * Only calls the API once per instance; subsequent calls are no-ops.
+	 */
+	public async verifyAuth(): Promise<void> {
+		if (this.authVerified) return;
+		try {
+			await this.gl.Metadata.show();
+			this.authVerified = true;
+		} catch (e: any) {
+			const status = e?.cause?.response?.status;
+			if (status === 401) {
+				throw new Error(
+					"GitLab authentication failed: token is invalid or has been revoked. Please run 'auth login' to update your token.",
+				);
+			}
+			if (status === 403) {
+				throw new Error(
+					"GitLab authentication failed: token does not have sufficient permissions. Ensure your token has the 'api' scope.",
+				);
+			}
+			throw new Error(
+				`GitLab connection failed: ${e?.message ?? "unknown error"}. Check your host URL and network connection.`,
+			);
+		}
+	}
+
 	/**
 	 * Get Container Repositories in a range of ID. Look for repository for each ID in range concurrently using GitLab API:
 	 * a 404 indicated repository does not exists, otherwise repository data is returned.
@@ -77,8 +112,9 @@ export class GitLabContainerRepositoryCleaner {
 		startIndex = DEFAULT_START_INDEX,
 		endIndex = DEFAULT_END_INDEX,
 		outputFile: string | undefined = undefined,
+		{ quiet = false }: { quiet?: boolean } = {},
 	): Promise<RegistryRepositorySchema[]> {
-		if (!outputFile || outputFile === "") {
+		if (!quiet && (!outputFile || outputFile === "")) {
 			console.log(
 				"You didn't specify an output path to write results. By default results will be shown on stdout.",
 			);
@@ -104,6 +140,8 @@ export class GitLabContainerRepositoryCleaner {
 			}
 		}
 
+		await this.verifyAuth();
+
 		if (startIndex > endIndex) {
 			throw new Error("Start index is greater than end index");
 		}
@@ -120,16 +158,19 @@ export class GitLabContainerRepositoryCleaner {
 		const repositories: RegistryRepositorySchema[] = [];
 
 		// Process repos in batches of size this.concurrency
+		const progress = new ProgressBar(
+			totalLength,
+			"scanned",
+			() => `, found ${repositories.length}`,
+		);
 		let totalFetched = 0;
 		for (let i = 0; i < repositoryIds.length; i += this.concurrency) {
 			const batch = repositoryIds.slice(i, i + this.concurrency);
 			const batchPromises = batch.map((repositoryId) =>
-				this.getContainerRepositories(repositoryId),
+				this.getContainerRepository(repositoryId),
 			);
 
-			console.log(
-				`   Fetching ${batch.length} repositories, ${totalFetched}/${totalLength} done`,
-			);
+			progress.update(totalFetched);
 			const batchResults = await Promise.allSettled(batchPromises);
 			totalFetched += batch.length;
 			for (const result of batchResults) {
@@ -138,6 +179,7 @@ export class GitLabContainerRepositoryCleaner {
 				} // we ignore errors for now (invalid IDs)
 			}
 		}
+		progress.finish();
 
 		if (repositories.length === 0) {
 			throw new Error(
@@ -150,7 +192,7 @@ export class GitLabContainerRepositoryCleaner {
 		if (outputFile) {
 			console.log(`📝 Writing repository list as JSON to ${outputFile}`);
 			this.writeDataJsonToFile(outputFile, repositories);
-		} else {
+		} else if (!quiet) {
 			console.log("");
 			console.log(repositories);
 			console.log("");
@@ -163,9 +205,10 @@ export class GitLabContainerRepositoryCleaner {
 	}
 
 	/**
-	 * Fetch a single Container Repository by ID
+	 * Fetch a single Container Repository by ID (public, for cache add)
 	 */
-	private async getContainerRepositories(repositoryId: number) {
+	public async getContainerRepository(repositoryId: number) {
+		await this.verifyAuth();
 		return this.gl.ContainerRegistry.showRepository(repositoryId, {
 			tagsCount: true,
 		});
@@ -175,6 +218,7 @@ export class GitLabContainerRepositoryCleaner {
 		projectId: string | number,
 		outputFile?: string,
 	) {
+		await this.verifyAuth();
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			projectId: projectId,
 			tagsCount: true,
@@ -194,6 +238,7 @@ export class GitLabContainerRepositoryCleaner {
 		groupId: string | number,
 		outputFile?: string,
 	) {
+		await this.verifyAuth();
 		const repos = await this.gl.ContainerRegistry.allRepositories({
 			groupId: groupId,
 			tagsCount: true,
@@ -232,6 +277,7 @@ export class GitLabContainerRepositoryCleaner {
 		const result: CondensedRegistryRepositoryTagSchema[] = [];
 
 		// Process pages in batches of size this.concurrency
+		const progress = new ProgressBar(tagCount, "tags fetched");
 		for (let i = 0; i < pages.length; i += this.concurrency) {
 			const batch = pages.slice(i, i + this.concurrency);
 			const batchPromises = batch.map((page) =>
@@ -245,9 +291,9 @@ export class GitLabContainerRepositoryCleaner {
 
 			const batchResults = await Promise.all(batchPromises);
 			result.push(...batchResults.flat());
-
-			console.log(`   Fetched ${result.length}/${tagCount} tags...`);
+			progress.update(result.length);
 		}
+		progress.finish();
 
 		console.log(`   Found ${result.length} tags`);
 
@@ -280,7 +326,10 @@ export class GitLabContainerRepositoryCleaner {
 			tagsPerPage = DEFAULT_TAGS_PER_PAGE,
 			outputTags = "",
 			keepMostRecentN = DEFAULT_KEEP_MOST_RECENT,
+			confirmDelete,
 		} = options;
+
+		await this.verifyAuth();
 
 		// retrieve repository details first
 		const repository = await this.gl.ContainerRegistry.showRepository(
@@ -294,11 +343,8 @@ export class GitLabContainerRepositoryCleaner {
 			`🧹 Cleaning image tags for repository ${repository.path} (ID: ${repositoryId}). Keep tags matching '${keepRegex}' and delete tags older than ${olderThanDays} days. Keeping ${keepMostRecentN} most recent tags. (dry-run: ${this.dryRun})`,
 		);
 
-		// warn user if parameters doesn't make sense or forgot to disable safety
-		if (
-			keepRegex === DEFAULT_KEEP_REGEX ||
-			deleteRegex === DEFAULT_DELETE_REGEX
-		) {
+		// warn user if delete regex is still the safety default (matches nothing)
+		if (deleteRegex === DEFAULT_DELETE_REGEX) {
 			console.warn("");
 			console.warn(
 				`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't mach anything for safety reasons.`,
@@ -356,6 +402,14 @@ export class GitLabContainerRepositoryCleaner {
 			this.writeDataJsonToFile(outputTags, deleteTags);
 		}
 
+		if (confirmDelete) {
+			const proceed = await confirmDelete(deleteTags);
+			if (!proceed) {
+				console.log("⏭️  Skipped.");
+				return;
+			}
+		}
+
 		// Delete tags in parallel
 		if (this.dryRun) {
 			console.log(`🔥 [DRY-RUN] Would delete ${deleteTagCount} tags`);
@@ -363,7 +417,7 @@ export class GitLabContainerRepositoryCleaner {
 			console.log(`🔥 Deleting ${deleteTagCount} tags...`);
 		}
 
-		this.deleteTagsConcurrently(projectId, repositoryId, deleteTags);
+		await this.deleteTagsConcurrently(projectId, repositoryId, deleteTags);
 
 		if (this.dryRun) {
 			console.log(`✅ [DRY-RUN] Would have deleted ${deleteTagCount} tags`);
@@ -401,19 +455,21 @@ export class GitLabContainerRepositoryCleaner {
 	) {
 		console.log(`🔭 Fetching tag details for ${tags.length} tags`);
 
-		// Split tags into chunks that we can fetch concurrently
-		const chunkSize = Math.ceil(tags.length / this.concurrency);
-		const chunks = [];
-		for (let i = 0; i < tags.length; i += chunkSize) {
-			chunks.push(tags.slice(i, i + chunkSize));
+		const result: RegistryRepositoryTagSchema[] = [];
+		const progress = new ProgressBar(tags.length, "tag details");
+
+		// Process tags in batches of size this.concurrency
+		for (let i = 0; i < tags.length; i += this.concurrency) {
+			const batch = tags.slice(i, i + this.concurrency);
+			const batchResults = await Promise.all(
+				batch.map((t) => this.getTagDetail(projectId, repositoryId, t)),
+			);
+			for (const tag of batchResults) {
+				if (tag) result.push(tag);
+			}
+			progress.update(i + batch.length);
 		}
-
-		const detailedTagsPromises = chunks.map((chunk) =>
-			this.getTagDetails(projectId, repositoryId, chunk),
-		);
-
-		const results = await Promise.all(detailedTagsPromises);
-		const result = results.flat();
+		progress.finish();
 
 		if (result.length !== tags.length) {
 			console.warn(
@@ -424,40 +480,29 @@ export class GitLabContainerRepositoryCleaner {
 		return result;
 	}
 
-	// Update the getTagDetails function to work with chunks
-	private async getTagDetails(
+	private async getTagDetail(
 		projectId: number,
 		repositoryId: number,
-		tagChunk: CondensedRegistryRepositoryTagSchema[],
-	) {
-		const result: RegistryRepositoryTagSchema[] = [];
-
-		for (const t of tagChunk) {
-			// if (result.length % 10 == 0){
-			//     console.log(`   Fetching tag details ${result.length}/${tagChunk.length} in this chunk...`)
-			// }
-
-			try {
-				const tagDetails = await this.gl.ContainerRegistry.showTag(
-					projectId,
-					repositoryId,
-					t.name,
+		tag: CondensedRegistryRepositoryTagSchema,
+	): Promise<RegistryRepositoryTagSchema | undefined> {
+		try {
+			return await this.gl.ContainerRegistry.showTag(
+				projectId,
+				repositoryId,
+				tag.name,
+			);
+			// biome-ignore lint/suspicious/noExplicitAny: error handling
+		} catch (e: any) {
+			const status = e?.cause?.response?.status;
+			if (status && status !== 404) {
+				console.error(
+					`Non-404 error listing tag ${tag.name} in repository ${repositoryId}`,
 				);
-				result.push(tagDetails);
-				// biome-ignore lint/suspicious/noExplicitAny: error handling
-			} catch (e: any) {
-				const status = e?.cause?.response?.status;
-				if (status && status !== 404) {
-					console.error(
-						`Non-404 error listing tag ${t.name} in repository ${repositoryId}`,
-					);
-				} else {
-					console.warn(`Tag ${t.name} not found via GitLab API`);
-				}
+			} else {
+				console.warn(`Tag ${tag.name} not found via GitLab API`);
 			}
+			return undefined;
 		}
-
-		return result;
 	}
 
 	/**
@@ -598,35 +643,25 @@ export class GitLabContainerRepositoryCleaner {
 		repositoryId: number,
 		tags: RegistryRepositoryTagSchema[],
 	) {
-		const chunkSize = Math.ceil(tags.length / this.concurrency);
-		const chunks = [];
-		for (let i = 0; i < tags.length; i += chunkSize) {
-			chunks.push(tags.slice(i, i + chunkSize));
+		const label = this.dryRun ? "tags (dry-run)" : "tags deleted";
+		const progress = new ProgressBar(tags.length, label);
+
+		for (let i = 0; i < tags.length; i += this.concurrency) {
+			const batch = tags.slice(i, i + this.concurrency);
+			await Promise.all(
+				batch.map((tag) =>
+					this.dryRun
+						? Promise.resolve()
+						: this.gl.ContainerRegistry.removeTag(
+								projectId,
+								repositoryId,
+								tag.name,
+							),
+				),
+			);
+			progress.update(i + batch.length);
 		}
-
-		const deleteTagsPromises = chunks.map((chunk) =>
-			this.deleteTags(projectId, repositoryId, chunk),
-		);
-
-		await Promise.all(deleteTagsPromises);
-	}
-
-	private async deleteTags(
-		projectId: number,
-		repositoryId: number,
-		tags: RegistryRepositoryTagSchema[],
-	) {
-		for (const tag of tags) {
-			if (this.dryRun) {
-				console.log(`[DRY-RUN] Would delete tag ${tag.name}`);
-			} else {
-				await this.gl.ContainerRegistry.removeTag(
-					projectId,
-					repositoryId,
-					tag.name,
-				);
-			}
-		}
+		progress.finish();
 	}
 
 	private writeDataJsonToFile(outputTagsToFile: string, data: unknown) {

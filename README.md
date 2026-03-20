@@ -8,11 +8,17 @@ Contents:
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
+  - [Persistent Configuration](#persistent-configuration)
+  - [Multiple GitLab Targets](#multiple-gitlab-targets)
+  - [Authentication](#authentication)
+  - [Environment Variables](#environment-variables)
 - [Usage](#usage)
-  - [List Container Repositories for entire instance, groups or projects](#list-container-repositories-for-entire-instance-groups-or-projects)
+  - [Repository Cache](#repository-cache)
+  - [List Container Repositories](#list-container-repositories-for-entire-instance-groups-or-projects)
   - [Cleanup Container Repositories](#cleanup-container-repositories)
   - [How do I know my Container Repository ID?](#how-do-i-know-my-container-repository-id)
   - [Example Options](#example-options)
+  - [Interactive vs Non-interactive Mode](#interactive-vs-non-interactive-mode)
   - [How does cleanup work?](#how-does-cleanup-work)
 - [Development](#development)
 - [Testing](#testing)
@@ -20,13 +26,14 @@ Contents:
 
 ## What this is?
 
-This tool helps you clean up the GitLab Container Registry by deleting tags that match a specified regex pattern.
+A CLI tool for cleaning up GitLab Container Registries. It deletes container image tags based on regex patterns, age, and recency filters — with concurrent API requests for speed.
 
-- Interactive repository selection
-- Multiple repository deletion in a single command
-- Added option to keep/delete tags by age
-- More verbose logging
-- And: unit testing, code cleanup/formatting and refactoring
+- Interactive repository selection from a local cache
+- Multiple repository cleanup in a single session
+- Regex-based keep/delete filters with age and recency thresholds
+- Multi-target support for managing several GitLab instances
+- Secure token storage (config file or OS keyring)
+- Dry-run by default for safety
 
 ## Requirements
 
@@ -52,14 +59,98 @@ yarn build
 
 ## Configuration
 
-Export environment variables to specify your GitLab server and token:
+### Persistent Configuration
+
+The tool stores its configuration in a YAML file following the XDG Base Directory specification:
+
+- `$XDG_CONFIG_HOME/gitlab-registry-cleaner/config.yaml` (defaults to `~/.config/gitlab-registry-cleaner/config.yaml`)
+
+On first run, the tool will prompt you to set up your GitLab host. You can also manage the full configuration interactively:
 
 ```sh
-export GITLAB_HOST=https://gitlab.example.com
+./gitlab-container-registry-cleaner config edit
+```
+
+This opens a menu where you can add/remove GitLab targets and edit preferences (concurrency, keep most recent). To view the current configuration:
+
+```sh
+./gitlab-container-registry-cleaner config show
+```
+
+### Multiple GitLab Targets
+
+You can configure multiple GitLab hosts. Each target can have its own preferences and maintains a separate repository cache:
+
+```sh
+./gitlab-container-registry-cleaner config add-target https://gitlab.example.com
+./gitlab-container-registry-cleaner config add-target https://gitlab.other.com
+```
+
+When multiple targets are configured, the tool will prompt you to select one. If only one target exists, it is used automatically.
+
+The configuration file looks like this:
+
+```yaml
+preferences:
+  defaultConcurrency: 20
+  defaultKeepMostRecent: 0
+targets:
+  - host: https://gitlab.example.com
+    lastCacheUpdate: "2025-10-01T12:00:00Z"
+    preferences:
+      defaultConcurrency: 50
+  - host: https://gitlab.other.com
+```
+
+Per-target preferences override global preferences.
+
+### Authentication
+
+Authenticate with a GitLab instance using `auth login`. This stores your personal access token so you don't need to export it every time. The tool guides you to create a token with the required `api` scope.
+
+```sh
+# Interactive login (prompts for host and token)
+./gitlab-container-registry-cleaner auth login
+
+# Non-interactive login
+./gitlab-container-registry-cleaner auth login --hostname https://gitlab.example.com --token glpat-xxx
+
+# Read token from stdin (useful in scripts)
+echo "glpat-xxx" | ./gitlab-container-registry-cleaner auth login --hostname https://gitlab.example.com --stdin
+
+# Store token in OS keyring instead of config file
+./gitlab-container-registry-cleaner auth login --use-keyring
+```
+
+By default, tokens are stored in the config file (with restrictive file permissions `0600`). On macOS and Linux, you can optionally store tokens in your operating system's keyring (macOS Keychain or GNOME Keyring / KDE Wallet via Secret Service).
+
+Check authentication status across all targets:
+
+```sh
+./gitlab-container-registry-cleaner auth status
+```
+
+Remove stored credentials:
+
+```sh
+./gitlab-container-registry-cleaner auth logout
+```
+
+### Environment Variables
+
+Environment variables take precedence over stored tokens. If `GITLAB_TOKEN` is set, it is used regardless of what is stored in the config file or keyring:
+
+```sh
 export GITLAB_TOKEN="xxx"
 ```
 
-Alternatively, you can use a `.env` file to store those variables:
+`GITLAB_HOST` can also be set as an environment variable, which takes precedence over the config file:
+
+```sh
+export GITLAB_HOST=https://gitlab.example.com
+```
+
+You can use a `.env` file to store these variables:
 
 ```sh
 GITLAB_HOST=https://gitlab.example.com
@@ -68,13 +159,53 @@ GITLAB_TOKEN="xxx"
 
 ## Usage
 
-We provide a wrapper around the CLI that makes it easier to use. You can run:
+Running the tool with no arguments starts a guided flow that walks you through setup (if needed) and interactive repository selection:
 
 ```sh
 ./gitlab-container-registry-cleaner
 ```
 
-See below for more details on the commands.
+On first run, it will prompt you to configure a GitLab host and token. On subsequent runs, it uses your cached repositories for interactive cleanup. See below for individual commands.
+
+### Repository Cache
+
+Instead of manually saving and passing JSON files, you can use the built-in repository cache. The cache is stored per GitLab host and persists between runs.
+
+Populate the cache by scanning repositories:
+
+```sh
+./gitlab-container-registry-cleaner cache update
+```
+
+You can customize the scan range and concurrency:
+
+```sh
+./gitlab-container-registry-cleaner cache update -s 500 -e 1000 -c 10
+```
+
+Add a single repository by ID:
+
+```sh
+./gitlab-container-registry-cleaner cache add 161
+```
+
+View cached repositories:
+
+```sh
+./gitlab-container-registry-cleaner cache show
+```
+
+Clear the cache:
+
+```sh
+./gitlab-container-registry-cleaner cache clear
+```
+
+Once the cache is populated, the `clean` command will automatically use it for interactive repository selection:
+
+```sh
+./gitlab-container-registry-cleaner clean
+```
 
 ### List Container Repositories for entire instance, groups or projects
 
@@ -131,26 +262,17 @@ cat /tmp/tags.json | jq '.[] | .name + "\t" + .created_at ' -r
 
 ### How do I know my Container Repository ID?
 
-The Repository ID is visible in the URL when navigating to your project Container Repository in _Deploy > Container Registry > [repository name]_. The URL looks like:
-
-``` sh
-# Repository ID is 42
-https://gitlab.mycompany.net/somegroup/myproject/container_registry/42
-```
-
-Note that this ID is not the same as the project ID!
-
-Alternatively, use `./gitlab-container-registry-cleaner list` (see above) to generate the JSON file. Then you can pass that file to the clean command without any ID, which will show a list of repositories to choose from:
+The easiest way is to use `cache update` to populate your local cache, then run `clean` without arguments for interactive selection:
 
 ```sh
-./gitlab-container-registry-cleaner list all -o /tmp/repositories.json
-./gitlab-container-registry-cleaner clean -j /tmp/repositories.json
+./gitlab-container-registry-cleaner cache update
+./gitlab-container-registry-cleaner clean
 ```
 
-This might show something like the following, where you can select the repositories you want to clean:
+This shows a grouped list of repositories where you can select the ones you want to clean:
 
 ```
-? Select a repository to clean: (Press <space> to select, <a> to toggle all, <i> to invert selection, and <enter> to proceed)
+? Select repositories to clean: (Press <space> to select, <a> to toggle all, <i> to invert selection, and <enter> to proceed)
  firstgroup
 ❯◯ foo/bar/example-project
  secondgroup
@@ -163,7 +285,21 @@ This might show something like the following, where you can select the repositor
 (Use arrow keys to reveal more choices)
 ```
 
-Press `enter` to clean the selected repositories.
+The Repository ID is also visible in the URL when navigating to your project Container Repository in _Deploy > Container Registry > [repository name]_:
+
+```sh
+# Repository ID is 42
+https://gitlab.mycompany.net/somegroup/myproject/container_registry/42
+```
+
+Note that this ID is not the same as the project ID!
+
+You can also use `list` commands to output a JSON file and pass it with `-j` (deprecated in favor of the cache):
+
+```sh
+./gitlab-container-registry-cleaner list all -o /tmp/repositories.json
+./gitlab-container-registry-cleaner clean -j /tmp/repositories.json
+```
 
 ### Example Options
 
@@ -176,7 +312,7 @@ Keep releases and remove everything else
 Delete all tags starting with `dev-`. `$^` won't match anything:
 
 ```sh
--k '$^' -d '$dev-.*'
+-k '$^' -d '^dev-.*'
 ```
 
 Delete all tags - USE WITH CARE:
@@ -197,16 +333,37 @@ Keep the most recent 5 tags and delete everything older than 30 days:
 -k '$^' -d '.*' -n 5 -a 30
 ```
 
+### Interactive vs Non-interactive Mode
+
+The tool behaves differently depending on how it is invoked. This is important to understand for safe usage.
+
+**Non-interactive mode** (`clean <id> [options]`) is designed for scripting and CI/CD:
+
+- Dry-run is enabled by default — nothing is deleted unless you pass `--no-dry-run`
+- Regex defaults are safe: keep regex matches everything (`.*`), delete regex matches nothing (`^$`)
+- You must explicitly set `-k` and `-d` to target specific tags
+- No confirmation prompt — the dry-run flag is your safety net
+
+**Interactive mode** (run with no arguments, or `clean` with no repository ID when cache is populated):
+
+- Dry-run is disabled — deletions happen after you confirm
+- Regex defaults are permissive: keep regex matches nothing (`^$`), delete regex matches everything (`.*`)
+- You select repositories from a checkbox list
+- Before deletion, you see the full list of tags and must confirm each repository
+- Safety comes from the confirmation prompt, not from dry-run
+
+In short: non-interactive mode is safe-by-default (opt _in_ to delete), while interactive mode is permissive-by-default (opt _out_ via confirmation).
+
 ### How does cleanup work?
 
-Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.gitlab.com/ee/user/packages/container_registry/reduce_container_registry_storage.html#how-the-cleanup-policy-works). Cleaner calls GitLab REST API concurrently such as:
+Cleanup behavior is similar to [GitLab Registry cleanup policy](https://docs.gitlab.com/ee/user/packages/container_registry/reduce_container_registry_storage.html#how-the-cleanup-policy-works). Cleaner calls GitLab REST API concurrently:
 
-- List all tags in repository with [_List registry repository tags_](https://docs.gitlab.com/ee/api/container_registry.html#list-registry-repository-tags)
+- List all tags in the repository
 - Filter out tags matching keep regex, filter in tags matching delete regex
-- Get tag details with [_Get details of a registry repository tag_](https://docs.gitlab.com/ee/api/container_registry.html#get-details-of-a-registry-repository-tag) as List registry repository tags only provide tag name, not creation date
-- Filter in tags older than specified number of days
-- Keep the most recent N tags if specified
-- Delete 'em !
+- Fetch tag details to get creation dates (falls back to semver sorting if the API returns 404, a known issue with OCI manifests)
+- Filter by age: only delete tags older than the specified number of days
+- Keep the N most recent tags if specified
+- Delete matching tags (or show what would be deleted in dry-run mode)
 
 ## Development
 
@@ -221,6 +378,15 @@ To release, run `yarn release`.
 ## Testing
 
 Run `yarn test` to run the tests.
+
+Tests use [vitest](https://vitest.dev/) with [msw](https://mswjs.io/) to mock the GitLab API. The test suite exercises the public interface only — no spying on private methods. Instead, HTTP DELETE calls are tracked through the mock server to verify which tags would actually be removed.
+
+The cleaner tests are organized by mode:
+
+- **Authentication** — verifies early failure on invalid/insufficient tokens
+- **Non-interactive cleanup** — tests dry-run behavior, regex filtering, age filtering, and recency (keep N most recent)
+- **Interactive cleanup** — tests the `confirmDelete` callback: declined confirmation prevents deletion, accepted confirmation proceeds, and the correct tags are passed to the callback
+- **Semver fallback** — tests graceful degradation when the GitLab API returns 404 for tag details (OCI manifest issue), falling back to semver-based sorting
 
 ## License
 
