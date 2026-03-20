@@ -81,8 +81,11 @@ export class GitLabContainerRepositoryCleaner {
 		try {
 			await this.gl.Metadata.show();
 			this.authVerified = true;
-		} catch (e: any) {
-			const status = e?.cause?.response?.status;
+		} catch (e: unknown) {
+			const err = e as Record<string, unknown> | undefined;
+			const cause = err?.cause as Record<string, unknown> | undefined;
+			const response = cause?.response as Record<string, unknown> | undefined;
+			const status = response?.status;
 			if (status === 401) {
 				throw new Error(
 					"GitLab authentication failed: token is invalid or has been revoked. Please run 'auth login' to update your token.",
@@ -93,8 +96,9 @@ export class GitLabContainerRepositoryCleaner {
 					"GitLab authentication failed: token does not have sufficient permissions. Ensure your token has the 'api' scope.",
 				);
 			}
+			const message = e instanceof Error ? e.message : "unknown error";
 			throw new Error(
-				`GitLab connection failed: ${e?.message ?? "unknown error"}. Check your host URL and network connection.`,
+				`GitLab connection failed: ${message}. Check your host URL and network connection.`,
 			);
 		}
 	}
@@ -489,9 +493,11 @@ export class GitLabContainerRepositoryCleaner {
 				repositoryId,
 				tag.name,
 			);
-			// biome-ignore lint/suspicious/noExplicitAny: error handling
-		} catch (e: any) {
-			const status = e?.cause?.response?.status;
+		} catch (e: unknown) {
+			const err = e as Record<string, unknown> | undefined;
+			const cause = err?.cause as Record<string, unknown> | undefined;
+			const response = cause?.response as Record<string, unknown> | undefined;
+			const status = response?.status;
 			if (status && status !== 404) {
 				console.error(
 					`Non-404 error listing tag ${tag.name} in repository ${repositoryId}`,

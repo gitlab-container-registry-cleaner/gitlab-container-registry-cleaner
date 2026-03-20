@@ -731,8 +731,9 @@ async function promptForToken(host: string): Promise<void> {
 	});
 	try {
 		await testCleaner.verifyAuth();
-	} catch (e: any) {
-		console.error(`\n❌ ${e.message}`);
+	} catch (e: unknown) {
+		const message = e instanceof Error ? e.message : String(e);
+		console.error(`\n❌ ${message}`);
 		return;
 	}
 
