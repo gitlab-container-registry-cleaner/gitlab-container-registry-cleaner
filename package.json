@@ -22,7 +22,7 @@
     "vitest": "^4.1.0"
   },
   "engines": {
-    "node": ">=18.20.0"
+    "node": ">=22.0.0"
   },
   "bin": "./gitlab-container-registry-cleaner",
   "exports": {
