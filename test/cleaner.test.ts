@@ -136,9 +136,7 @@ describe("Cleaner", () => {
 			"https://gitlab.com/api/v4/projects/:projectId/registry/repositories/:repositoryId/tags",
 			({ params }) => {
 				const projectId = Number(params.projectId);
-				return HttpResponse.json(
-					FAKE_TAGS[projectId]?.map(condensed) ?? [],
-				);
+				return HttpResponse.json(FAKE_TAGS[projectId]?.map(condensed) ?? []);
 			},
 		),
 		http.get(
@@ -229,10 +227,7 @@ describe("Cleaner", () => {
 				gitlabHost: "https://gitlab.com",
 				gitlabToken: "token",
 			});
-			const repos = await cleaner.getContainerRepositoriesConcurrently(
-				1,
-				5,
-			);
+			const repos = await cleaner.getContainerRepositoriesConcurrently(1, 5);
 			expect(repos.length).toBeGreaterThan(0);
 		});
 	});

@@ -326,9 +326,8 @@ describe("ConfigManager", () => {
 			}
 		});
 
-		it("should not store token in config when using keyring storage", async () => {
+		it("should store token and storage type in config file", async () => {
 			await configManager.addTarget("https://gitlab.example.com");
-			// Keyring will fail in test env, but we can verify config-based storage
 			await configManager.saveToken(
 				"https://gitlab.example.com",
 				"my-token",

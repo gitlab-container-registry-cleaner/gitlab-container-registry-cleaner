@@ -36,9 +36,7 @@ export interface CleanupContainerRepositoryTagsOptions {
 	outputTags: string;
 	keepMostRecentN: number;
 	/** Optional callback to confirm deletion. Receives the list of tags to delete. Return true to proceed. */
-	confirmDelete?: (
-		tags: RegistryRepositoryTagSchema[],
-	) => Promise<boolean>;
+	confirmDelete?: (tags: RegistryRepositoryTagSchema[]) => Promise<boolean>;
 }
 
 export class GitLabContainerRepositoryCleaner {
@@ -347,7 +345,7 @@ export class GitLabContainerRepositoryCleaner {
 		if (deleteRegex === DEFAULT_DELETE_REGEX) {
 			console.warn("");
 			console.warn(
-				`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't mach anything for safety reasons.`,
+				`🤔 Hey, looks like you kept default keep and/or delete regex. By default, these regex won't match anything for safety reasons.`,
 			);
 			console.warn(
 				`   You'll probably want to use -k and -d flags to specify regex against which tags must match to be deleted.`,

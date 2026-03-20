@@ -77,14 +77,36 @@ export class ConfigManager {
 			return { ...DEFAULT_CONFIG, targets: [] };
 		}
 		const content = await fsp.readFile(this.configPath, "utf-8");
-		const config = parse(content) as Config;
-		return config;
+		if (content.trim() === "") {
+			return { ...DEFAULT_CONFIG, targets: [] };
+		}
+
+		let parsed: unknown;
+		try {
+			parsed = parse(content);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`Failed to parse config file at "${this.configPath}": ${message}`,
+			);
+		}
+
+		const loaded =
+			parsed && typeof parsed === "object" ? (parsed as Partial<Config>) : {};
+
+		return {
+			...DEFAULT_CONFIG,
+			...loaded,
+			preferences: { ...DEFAULT_CONFIG.preferences, ...loaded.preferences },
+			targets: Array.isArray(loaded.targets) ? loaded.targets : [],
+		};
 	}
 
 	async save(config: Config): Promise<void> {
 		await this.ensureDir();
 		const content = stringify(config);
 		await fsp.writeFile(this.configPath, content, { mode: 0o600 });
+		await fsp.chmod(this.configPath, 0o600);
 	}
 
 	async addTarget(
@@ -181,6 +203,7 @@ export class ConfigManager {
 			JSON.stringify(repositories, undefined, "  "),
 			{ mode: 0o600 },
 		);
+		await fsp.chmod(cachePath, 0o600);
 
 		// Update lastCacheUpdate on the target
 		const config = await this.load();
@@ -359,14 +382,15 @@ export class ConfigManager {
 				"account",
 				account,
 			]);
-			child.stdin?.write(token);
-			child.stdin?.end();
 			await new Promise<void>((resolve, reject) => {
-				child.on("close", (code) =>
+				child.once("error", (error) => reject(error));
+				child.once("close", (code) =>
 					code === 0
 						? resolve()
 						: reject(new Error(`secret-tool exited with code ${code}`)),
 				);
+				child.stdin?.write(token);
+				child.stdin?.end();
 			});
 		} else {
 			throw new Error(`Keyring not supported on platform: ${platform}`);

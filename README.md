@@ -312,25 +312,25 @@ Keep releases and remove everything else
 Delete all tags starting with `dev-`. `$^` won't match anything:
 
 ```sh
--k '$^' -d '^dev-.*'
+-k '^$' -d '^dev-.*'
 ```
 
 Delete all tags - USE WITH CARE:
 
 ```sh
--k '$^' -d '.*'
+-k '^$' -d '.*'
 ```
 
 Delete all, but keep the most recent 10 tags:
 
 ```sh
--k '$^' -d '.*' -n 10
+-k '^$' -d '.*' -n 10
 ```
 
 Keep the most recent 5 tags and delete everything older than 30 days:
 
 ```sh
--k '$^' -d '.*' -n 5 -a 30
+-k '^$' -d '.*' -n 5 -a 30
 ```
 
 ### Interactive vs Non-interactive Mode

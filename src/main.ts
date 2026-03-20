@@ -984,7 +984,9 @@ async function promptEditPreferences(host?: string) {
 async function actionConfigShow() {
 	const exists = await configManager.exists();
 	if (!exists) {
-		console.log("No configuration found. Run 'config init' to set up.");
+		console.log(
+			"No configuration found. Run 'config edit' to create or update your configuration.",
+		);
 		return;
 	}
 
