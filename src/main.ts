@@ -20,7 +20,6 @@ import type {
 	RegistryRepositoryTagSchema,
 } from "@gitbeaker/rest";
 import {
-	checkbox,
 	confirm,
 	input,
 	number,
@@ -28,6 +27,7 @@ import {
 	Separator,
 	select,
 } from "@inquirer/prompts";
+import liveCheckbox from "./live-checkbox.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = path.join(__dirname, "../package.json");
@@ -305,12 +305,22 @@ async function actionDefault() {
 
 	// Delegate to clean with no arguments (interactive selection from cache)
 	const token = await resolveToken(host);
+	const prefs = await configManager.getEffectivePreferences(host);
+	const concurrency = prefs.defaultConcurrency ?? DEFAULT_CONCURRENCY;
 	const choices = buildRepositoryChoices(cache);
 
-	const repositoryIds = await checkbox({
+	const cleaner = new GitLabContainerRepositoryCleaner({
+		gitlabHost: host,
+		gitlabToken: token,
+		dryRun: false,
+		concurrency,
+	});
+
+	const repositoryIds = await liveCheckbox({
 		message: "Select repositories to clean:",
 		choices,
 		pageSize: 15,
+		fetchLabels: createFetchLabels(cleaner, cache, host, concurrency),
 	});
 
 	if (repositoryIds.length === 0) {
@@ -318,19 +328,20 @@ async function actionDefault() {
 		return;
 	}
 
-	const prefs = await configManager.getEffectivePreferences(host);
-	for (const repositoryId of repositoryIds) {
-		const cleaner = new GitLabContainerRepositoryCleaner({
-			gitlabHost: host,
-			gitlabToken: token,
-			dryRun: false,
-			concurrency: prefs.defaultConcurrency ?? DEFAULT_CONCURRENCY,
-		});
+	const keepMostRecentN =
+		prefs.defaultKeepMostRecent ?? DEFAULT_KEEP_MOST_RECENT;
+	printCleanupSettings({
+		keepRegex: "^$",
+		deleteRegex: ".*",
+		olderThanDays: DEFAULT_OLDER_THAN_DAYS,
+		keepMostRecentN,
+	});
 
+	for (const repositoryId of repositoryIds) {
 		await cleaner.cleanupContainerRepositoryTags(repositoryId, {
 			keepRegex: "^$",
 			deleteRegex: ".*",
-			keepMostRecentN: prefs.defaultKeepMostRecent ?? DEFAULT_KEEP_MOST_RECENT,
+			keepMostRecentN,
 			confirmDelete: interactiveConfirmDelete,
 		});
 
@@ -381,15 +392,63 @@ function buildRepositoryChoices(repositories: RegistryRepositorySchema[]) {
 			new Separator(`── ${group} ──`),
 			...repos
 				.sort((a, b) => a.path.localeCompare(b.path))
-				.map((repo) => {
-					const subPath = repo.path.split("/").slice(1).join("/");
-					const tags = repo.tags_count ?? "?";
-					return {
-						name: `${subPath} (${tags} tags)`,
-						value: repo.id,
-					};
-				}),
+				.map((repo) => ({
+					name: makeRepoLabel(repo),
+					value: repo.id,
+				})),
 		]);
+}
+
+function printCleanupSettings(settings: {
+	keepRegex: string;
+	deleteRegex: string;
+	olderThanDays: number;
+	keepMostRecentN: number;
+}) {
+	console.log("\n📋 Cleanup settings:");
+	console.log(`   Delete regex:      ${settings.deleteRegex}`);
+	console.log(`   Keep regex:        ${settings.keepRegex}`);
+	console.log(`   Older than:        ${settings.olderThanDays} days`);
+	console.log(`   Keep most recent:  ${settings.keepMostRecentN} tags`);
+	console.log("");
+}
+
+function makeRepoLabel(repo: RegistryRepositorySchema): string {
+	const subPath = repo.path.split("/").slice(1).join("/");
+	const tags = repo.tags_count ?? "?";
+	return `${subPath} (${tags} tags)`;
+}
+
+function createFetchLabels(
+	cleaner: GitLabContainerRepositoryCleaner,
+	cachedRepos: RegistryRepositorySchema[],
+	host: string,
+	concurrency: number,
+): (
+	onUpdate: (value: number, newName: string) => void,
+	signal: AbortSignal,
+) => Promise<void> {
+	return async (onUpdate, signal) => {
+		const freshRepos: RegistryRepositorySchema[] = [];
+		for (let i = 0; i < cachedRepos.length; i += concurrency) {
+			if (signal.aborted) break;
+			const batch = cachedRepos.slice(i, i + concurrency);
+			const results = await Promise.allSettled(
+				batch.map((r) => cleaner.getContainerRepository(r.id)),
+			);
+			for (const result of results) {
+				if (result.status === "fulfilled") {
+					const repo = result.value;
+					freshRepos.push(repo);
+					onUpdate(repo.id, makeRepoLabel(repo));
+				}
+			}
+		}
+		// Merge fresh data into cache: update fetched repos, keep others as-is
+		const freshById = new Map(freshRepos.map((r) => [r.id, r]));
+		const merged = cachedRepos.map((r) => freshById.get(r.id) ?? r);
+		await configManager.saveCache(host, merged);
+	};
 }
 
 /**
@@ -501,14 +560,26 @@ async function actionCleanRepository(
 	}
 
 	const interactive = repositories && !repositoryIdOrPath;
+	const concurrency = Number.parseInt(opts.concurrency, 10);
 
 	if (repositories) {
 		if (!repositoryIdOrPath) {
 			const choices = buildRepositoryChoices(repositories);
-			repositoryIds = await checkbox({
+			const fetchCleaner = new GitLabContainerRepositoryCleaner({
+				gitlabHost: host,
+				gitlabToken: token,
+				concurrency,
+			});
+			repositoryIds = await liveCheckbox({
 				message: "Select repositories to clean:",
 				choices,
 				pageSize: 15,
+				fetchLabels: createFetchLabels(
+					fetchCleaner,
+					repositories,
+					host,
+					concurrency,
+				),
 			});
 		} else if (Number.isNaN(Number(repositoryIdOrPath))) {
 			// Look up repository by path
@@ -538,28 +609,42 @@ async function actionCleanRepository(
 		repositoryIds = [Number(repositoryIdOrPath)];
 	}
 
+	const effectiveKeepRegex =
+		interactive && opts.keepRegex === DEFAULT_KEEP_REGEX
+			? "^$"
+			: opts.keepRegex;
+	const effectiveDeleteRegex =
+		interactive && opts.deleteRegex === DEFAULT_DELETE_REGEX
+			? ".*"
+			: opts.deleteRegex;
+	const effectiveOlderThanDays = Number.parseInt(opts.olderThanDays, 10);
+	const effectiveKeepMostRecent = Number.parseInt(opts.keepMostRecent, 10);
+
+	if (interactive) {
+		printCleanupSettings({
+			keepRegex: effectiveKeepRegex,
+			deleteRegex: effectiveDeleteRegex,
+			olderThanDays: effectiveOlderThanDays,
+			keepMostRecentN: effectiveKeepMostRecent,
+		});
+	}
+
 	for (const repositoryId of repositoryIds) {
 		const cleaner = new GitLabContainerRepositoryCleaner({
 			gitlabHost: host,
 			gitlabToken: token,
 			dryRun: interactive ? false : opts.dryRun,
-			concurrency: Number.parseInt(opts.concurrency, 10),
+			concurrency,
 			verbose: opts.verbose,
 		});
 
 		await cleaner.cleanupContainerRepositoryTags(repositoryId, {
-			keepRegex:
-				interactive && opts.keepRegex === DEFAULT_KEEP_REGEX
-					? "^$"
-					: opts.keepRegex,
-			deleteRegex:
-				interactive && opts.deleteRegex === DEFAULT_DELETE_REGEX
-					? ".*"
-					: opts.deleteRegex,
+			keepRegex: effectiveKeepRegex,
+			deleteRegex: effectiveDeleteRegex,
 			tagsPerPage: Number.parseInt(opts.tagsPerPage, 10),
-			olderThanDays: Number.parseInt(opts.olderThanDays, 10),
+			olderThanDays: effectiveOlderThanDays,
 			outputTags: opts.outputTags,
-			keepMostRecentN: Number.parseInt(opts.keepMostRecent, 10),
+			keepMostRecentN: effectiveKeepMostRecent,
 			...(interactive ? { confirmDelete: interactiveConfirmDelete } : {}),
 		});
 

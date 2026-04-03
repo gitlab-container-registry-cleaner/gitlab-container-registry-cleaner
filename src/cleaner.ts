@@ -397,12 +397,21 @@ export class GitLabContainerRepositoryCleaner {
 		);
 		const deleteTagCount = deleteTags.length;
 
-		console.log(`💀 Found ${deleteTagCount} tags to delete`);
-
 		if (outputTags) {
 			console.log(`📝 Writing tag list to ${outputTags}`);
 			this.writeDataJsonToFile(outputTags, deleteTags);
 		}
+
+		if (deleteTagCount === 0) {
+			console.log(
+				"✅ No tags to delete — all tags are either kept by regex, too recent, or protected by --keep-most-recent.\n",
+			);
+			return;
+		}
+
+		console.log(
+			`💀 Found ${deleteTagCount} tag${deleteTagCount === 1 ? "" : "s"} to delete`,
+		);
 
 		if (confirmDelete) {
 			const proceed = await confirmDelete(deleteTags);
@@ -412,7 +421,6 @@ export class GitLabContainerRepositoryCleaner {
 			}
 		}
 
-		// Delete tags in parallel
 		if (this.dryRun) {
 			console.log(`🔥 [DRY-RUN] Would delete ${deleteTagCount} tags`);
 		} else {
