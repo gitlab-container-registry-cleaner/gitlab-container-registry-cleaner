@@ -15,6 +15,7 @@
     "@types/node": "^25.5.0",
     "@types/semver": "^7.7.1",
     "auto-changelog": "^2.5.0",
+    "lefthook": "^2.1.4",
     "msw": "^2.12.13",
     "np": "^11.0.2",
     "tsx": "^4.21.0",
@@ -60,6 +61,7 @@
     "version": "npx auto-changelog -p && git add CHANGELOG.md",
     "release": "yarn build && np",
     "lint": "biome check .",
-    "lint:fix": "biome check . --write"
+    "lint:fix": "biome check . --write",
+    "postinstall": "lefthook install"
   }
 }
